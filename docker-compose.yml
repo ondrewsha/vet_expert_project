@@ -49,7 +49,7 @@ services:
     volumes:
       # Прокидываем код из папки src внутрь контейнера, 
       # чтобы при изменении кода сервер сам перезагружался (hot-reload)
-      - ./backend/src:/app/src
+      - ./backend:/app
     depends_on:
       - db
       - mongo
