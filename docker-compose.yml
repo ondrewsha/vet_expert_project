@@ -1,0 +1,62 @@
+services:
+  # 1. Реляционная БД (Пользователи, транзакции, расписание)
+  db:
+    image: postgres:15-alpine
+    container_name: vetexpert_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. NoSQL БД (Файлы гайдов, PDF через GridFS)
+  mongo:
+    image: mongo:6.0
+    container_name: vetexpert_mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # 3. In-memory БД (Временные коды из ТГ, кэш)
+  redis:
+    image: redis:7-alpine
+    container_name: vetexpert_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # 4. Наш FastAPI Бэкенд
+  backend:
+    build: 
+      context: ./backend
+    container_name: vetexpert_backend
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Прокидываем код из папки src внутрь контейнера, 
+      # чтобы при изменении кода сервер сам перезагружался (hot-reload)
+      - ./backend/src:/app/src
+    depends_on:
+      - db
+      - mongo
+      - redis
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
