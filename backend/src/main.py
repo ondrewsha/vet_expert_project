@@ -4,6 +4,7 @@ from src.config import settings
 from src.api.auth import router as auth_router
 from src.api.guides import router as guides_router
 from src.api.users import router as users_router
+from src.api.appointments import router as appointments_router
 
 # Инициализация приложения
 app = FastAPI(
@@ -24,6 +25,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(guides_router)
 app.include_router(users_router)
+app.include_router(appointments_router)
 
 # Тестовый эндпоинт для проверки работоспособности
 @app.get("/api/ping", tags=["System"])

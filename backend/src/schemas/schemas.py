@@ -50,4 +50,20 @@ class UserResponse(BaseModel):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     telegram_id: Optional[int] = None
-    
+
+# --- ЗАПИСИ НА КОНСУЛЬТАЦИЮ ---
+class AppointmentBase(BaseModel):
+    start_time: datetime
+    pet_info: Optional[str] = None
+
+class AppointmentCreate(AppointmentBase):
+    pass
+
+class AppointmentResponse(AppointmentBase):
+    id: int
+    end_time: datetime
+    status: str
+    meet_link: Optional[str] = None
+
+    class Config:
+        from_attributes = True
