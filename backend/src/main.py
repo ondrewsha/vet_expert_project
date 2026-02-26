@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.config import settings
+from src.api.auth import router as auth_router
+from src.api.guides import router as guides_router
+from src.api.users import router as users_router
 
 # Инициализация приложения
 app = FastAPI(
@@ -17,6 +20,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
+app.include_router(guides_router)
+app.include_router(users_router)
 
 # Тестовый эндпоинт для проверки работоспособности
 @app.get("/api/ping", tags=["System"])
