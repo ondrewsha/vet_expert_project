@@ -55,6 +55,22 @@ services:
       - mongo
       - redis
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+  
+  frontend:
+    build:
+      context: ./frontend
+    container_name: vetexpert_frontend
+    restart: always
+    ports:
+      - "5173:5173"  # Порт React/Vite
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # Чтобы локальная папка не затирала модули внутри контейнера
+    depends_on:
+      - backend
+    # Переменные окружения для React (начинаются с VITE_)
+    environment:
+      - VITE_API_URL=http://localhost:8000
 
 volumes:
   postgres_data:

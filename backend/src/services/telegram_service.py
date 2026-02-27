@@ -1,7 +1,7 @@
 import httpx
 from src.config import settings
 
-async def send_telegram_message(chat_id: str, text: str):
+async def send_telegram_message(chat_id: str, text: str, keyboard: dict = None):
     """
     Отправляет сообщение в Telegram через официальный API.
     """
@@ -15,6 +15,10 @@ async def send_telegram_message(chat_id: str, text: str):
         "text": text,
         "parse_mode": "HTML" # Можно использовать жирный шрифт и т.д.
     }
+
+    # Если передали клавиатуру — добавляем её в запрос
+    if keyboard:
+        payload["reply_markup"] = keyboard
     
     async with httpx.AsyncClient() as client:
         try:
