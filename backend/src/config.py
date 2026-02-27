@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     YOOKASSA_SECRET_KEY: str = ""
     TG_BOT_TOKEN: str = ""
     TG_DOCTOR_CHAT_ID: str = ""
+    YANDEX_EMAIL: str = ""
+    YANDEX_PASSWORD: str = ""
 
     class Config:
         env_file = ".env"

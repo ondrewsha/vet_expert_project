@@ -8,6 +8,7 @@ from src.models import Appointment, Guide, User
 from src.core.security import get_current_user
 from src.services.telegram_service import send_telegram_message
 from src.services.yookassa_service import create_payment_url
+from src.services.yandex_calendar_service import create_yandex_event
 from src.config import settings
 
 router = APIRouter(prefix="/api/payments", tags=["Payments"])
@@ -46,6 +47,13 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 )
                 db.add(new_appt)
                 await db.commit()
+
+                # Создаем событие в Яндекс Календаре
+                create_yandex_event(
+                    start_time=start_time,
+                    summary=f"🩺 Пациент: {pet_info}",
+                    description=f"Запись через сайт. Клиент ID: {user_id}"
+                )
                 
                 # 2. Снимаем временную блокировку в Redis, слот теперь официально занят в БД
                 redis_key = f"slot_lock:{start_time.isoformat()}"

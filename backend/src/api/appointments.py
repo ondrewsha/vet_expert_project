@@ -9,6 +9,7 @@ from src.models import User, Appointment
 from src.schemas.schemas import AppointmentCreate, AppointmentResponse
 from src.core.security import get_current_user
 from src.services.yookassa_service import create_payment_url
+from src.services.yandex_calendar_service import get_busy_slots_yandex
 
 router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
 
@@ -31,9 +32,11 @@ async def get_available_slots(target_date: date, db: AsyncSession = Depends(get_
         all_slots.append(current_time)
         current_time += timedelta(minutes=CONSULTATION_DURATION_MINUTES)
         
-    # 2. Ищем УЖЕ занятые слоты в БД (status = 'scheduled' или 'completed')
+    # 2. занятость на этот день
     start_of_day = datetime.combine(target_date, time.min)
     end_of_day = datetime.combine(target_date, time.max)
+
+    yandex_busy = get_busy_slots_yandex(start_of_day, end_of_day)
     
     result = await db.execute(
         select(Appointment.start_time).where(
@@ -49,6 +52,19 @@ async def get_available_slots(target_date: date, db: AsyncSession = Depends(get_
     # 3. Фильтруем слоты, оставляем только свободные
     available_slots =[]
     for slot in all_slots:
+        slot_end = slot + timedelta(minutes=60)
+        
+        # Проверяем пересечения с Яндексом
+        is_busy_yandex = False
+        for b_start, b_end in yandex_busy:
+            # Если слоты пересекаются
+            if not (slot_end <= b_start or slot >= b_end):
+                is_busy_yandex = True
+                break
+        
+        if is_busy_yandex:
+            continue
+
         # Проверяем, нет ли слота в БД
         if slot in db_booked_slots:
             continue
