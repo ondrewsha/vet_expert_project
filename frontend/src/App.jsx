@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 
+import Navbar from './components/Navbar';
 import Login from './pages/Login';
+import Home from './pages/Home';
 
 // Компонент-обертка для защиты приватных роутов
 const ProtectedRoute = ({ children }) => {
@@ -11,28 +13,22 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// Заглушки для будущих страниц (пока сделаем их прямо тут)
-const Home = () => <div className="p-10 text-xl text-center">Главная витрина (Гайды + Врач)</div>;
+// Временная заглушка для профиля (сделаем её красивой в следующем шаге)
 const Profile = () => {
-  const { user, logout } = useAuthStore();
-  return (
-    <div className="p-10 text-center">
-      <h1 className="text-2xl font-bold mb-4">Личный кабинет</h1>
-      <p>Привет, {user?.full_name || user?.phone}!</p>
-      <button onClick={logout} className="mt-4 px-4 py-2 bg-red-500 text-white rounded">Выйти</button>
-    </div>
-  );
+  const { user } = useAuthStore();
+  return <div className="p-10 text-center text-2xl">Привет, {user?.full_name || user?.phone}! Это твой личный кабинет.</div>;
 };
+
+// Заглушка для записи к врачу
+const Consultation = () => <div className="p-10 text-center text-2xl">Здесь будет календарь для записи к врачу.</div>;
 
 function App() {
   const { checkAuth, isLoading } = useAuthStore();
 
-  // При первой загрузке приложения проверяем токен
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
 
-  // Пока проверяем токен, показываем лоадер, чтобы не моргал экран логина
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -43,21 +39,28 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Публичные страницы */}
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-
-        {/* Защищенные страницы */}
-        <Route 
-          path="/profile" 
-          element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          } 
-        />
-      </Routes>
+      {/* Навбар будет отображаться на всех страницах */}
+      <div className="min-h-screen flex flex-col">
+        <Navbar />
+        
+        {/* Контент страниц */}
+        <main className="grow">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/consultation" element={<Consultation />} />
+            
+            <Route 
+              path="/profile" 
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              } 
+            />
+          </Routes>
+        </main>
+      </div>
     </BrowserRouter>
   );
 }
