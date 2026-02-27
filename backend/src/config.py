@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     REDIS_HOST: str
     REDIS_PORT: int
     SECRET_KEY: str
+    YOOKASSA_SHOP_ID: str = ""
+    YOOKASSA_SECRET_KEY: str = ""
+    TG_BOT_TOKEN: str = ""
+    TG_DOCTOR_CHAT_ID: str = ""
 
     class Config:
         env_file = ".env"

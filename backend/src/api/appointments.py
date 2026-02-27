@@ -8,6 +8,7 @@ from src.database import get_db, redis_client
 from src.models import User, Appointment
 from src.schemas.schemas import AppointmentCreate, AppointmentResponse
 from src.core.security import get_current_user
+from src.services.yookassa_service import create_payment_url
 
 router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
 
@@ -88,14 +89,29 @@ async def book_appointment(
     lock_data = f"{current_user.id}|{appt_in.pet_info or ''}"
     await redis_client.set(redis_key, lock_data, ex=900)
     
-    # 3. (Позже здесь будет код создания платежа в ЮKassa)
-    # fake_payment_url = await yookassa_service.create_payment(...)
-    fake_payment_url = "https://yoomoney.ru/checkout/payments/v2/contract?orderId=test_123"
+    # 3. код создания платежа в ЮKassa
+    # Собираем метадату, которую ЮKassa вернет нам после успешной оплаты
+    metadata = {
+        "type": "appointment",
+        "user_id": str(current_user.id),
+        "start_time": slot_time.isoformat(),
+        "pet_info": appt_in.pet_info or "Не указано"
+    }
+    
+    price = 2000.00 # Цена консультации (можно потом вынести в БД/настройки)
+    
+    # Генерируем реальную ссылку
+    payment_url = await create_payment_url(
+        amount=price,
+        description=f"Онлайн-консультация с ветеринаром ({slot_time.strftime('%d.%m.%Y %H:%M')})",
+        metadata=metadata,
+        return_url="https://твой-будущий-домен.ru/profile" # Заглушка, куда перенаправить после оплаты
+    )
     
     return {
         "message": "Слот забронирован на 15 минут! Ожидаем оплату.",
         "expires_in_minutes": 15,
-        "payment_url": fake_payment_url,
+        "payment_url": payment_url,
         "slot": slot_time
     }
 
