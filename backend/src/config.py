@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     TG_DOCTOR_CHAT_ID: str = ""
     YANDEX_EMAIL: str = ""
     YANDEX_PASSWORD: str = ""
+    YANDEX_TELEMOST_LINK: str = ""
 
     class Config:
         env_file = ".env"

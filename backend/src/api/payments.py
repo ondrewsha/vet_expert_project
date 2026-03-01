@@ -38,12 +38,14 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 
                 # 1. Создаем железную запись в БД!
                 end_time = start_time + timedelta(minutes=60) # Прием длится час
+                meet_link = settings.YANDEX_TELEMOST_LINK
                 new_appt = Appointment(
                     user_id=user_id,
                     start_time=start_time,
                     end_time=end_time,
                     status="scheduled",
-                    pet_info=pet_info
+                    pet_info=pet_info,
+                    meet_link=meet_link
                 )
                 db.add(new_appt)
                 await db.commit()

@@ -1,5 +1,6 @@
 import caldav
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from src.config import settings
 
 # URL для подключения к Яндексу (стандартный)
@@ -33,6 +34,7 @@ def get_busy_slots_yandex(start_date: datetime, end_date: datetime) -> list[tupl
 
     # Ищем события в диапазоне
     events = calendar.date_search(start=start_date, end=end_date, expand=True)
+    moscow_tz = ZoneInfo("Europe/Moscow")
     
     busy_slots = []
     for event in events:
@@ -41,6 +43,11 @@ def get_busy_slots_yandex(start_date: datetime, end_date: datetime) -> list[tupl
         
         dtstart = vevent.dtstart.value
         dtend = vevent.dtend.value
+
+        if hasattr(dtstart, "astimezone") and dtstart.tzinfo is not None:
+            dtstart = dtstart.astimezone(moscow_tz)
+        if hasattr(dtend, "astimezone") and dtend.tzinfo is not None:
+            dtend = dtend.astimezone(moscow_tz)
 
         # Приводим всё к datetime без таймзон (naive), чтобы сравнивать проще
         if hasattr(dtstart, "replace"):

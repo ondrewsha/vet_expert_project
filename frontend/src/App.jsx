@@ -6,6 +6,7 @@ import Navbar from './components/Navbar';
 import Login from './pages/Login';
 import Home from './pages/Home';
 import Profile from './pages/Profile';
+import Consultation from './pages/Consultation';
 
 // Компонент-обертка для защиты приватных роутов
 const ProtectedRoute = ({ children }) => {
@@ -13,9 +14,6 @@ const ProtectedRoute = ({ children }) => {
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
 };
-
-// Заглушка для записи к врачу
-const Consultation = () => <div className="p-10 text-center text-2xl">Здесь будет календарь для записи к врачу.</div>;
 
 function App() {
   const { checkAuth, isLoading } = useAuthStore();

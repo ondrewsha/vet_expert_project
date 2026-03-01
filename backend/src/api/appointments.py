@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, date, time
 from typing import List
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
@@ -27,8 +28,14 @@ async def get_available_slots(target_date: date, db: AsyncSession = Depends(get_
     all_slots =[]
     current_time = datetime.combine(target_date, time(WORK_START_HOUR, 0))
     end_time = datetime.combine(target_date, time(WORK_END_HOUR, 0))
+
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    now = datetime.now(moscow_tz).replace(tzinfo=None) 
     
     while current_time < end_time:
+        if target_date == now.date() and current_time <= now + timedelta(minutes=15):
+            current_time += timedelta(minutes=CONSULTATION_DURATION_MINUTES)
+            continue
         all_slots.append(current_time)
         current_time += timedelta(minutes=CONSULTATION_DURATION_MINUTES)
         
