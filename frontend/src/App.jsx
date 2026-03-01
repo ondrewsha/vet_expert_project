@@ -5,18 +5,13 @@ import { useAuthStore } from './store/authStore';
 import Navbar from './components/Navbar';
 import Login from './pages/Login';
 import Home from './pages/Home';
+import Profile from './pages/Profile';
 
 // Компонент-обертка для защиты приватных роутов
 const ProtectedRoute = ({ children }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
-};
-
-// Временная заглушка для профиля (сделаем её красивой в следующем шаге)
-const Profile = () => {
-  const { user } = useAuthStore();
-  return <div className="p-10 text-center text-2xl">Привет, {user?.full_name || user?.phone}! Это твой личный кабинет.</div>;
 };
 
 // Заглушка для записи к врачу
