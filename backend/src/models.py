@@ -65,6 +65,7 @@ class Appointment(Base):
     pet_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     google_event_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     meet_link: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="appointments")

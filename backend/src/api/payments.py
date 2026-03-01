@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Request, Depends, BackgroundTasks, HTTPException
 from yookassa.domain.notification import WebhookNotificationFactory
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,10 +35,12 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
             # Проверяем, за что была оплата (консультация или гайд)
             if metadata.get("type") == "appointment":
                 user_id = int(metadata.get("user_id"))
-                start_time = datetime.fromisoformat(metadata.get("start_time"))
                 pet_info = metadata.get("pet_info")
                 
-                # 1. Создаем железную запись в БД!
+                moscow_tz = ZoneInfo("Europe/Moscow")
+                start_time_naive = datetime.fromisoformat(metadata.get("start_time"))
+                start_time = start_time_naive.replace(tzinfo=moscow_tz)
+                
                 end_time = start_time + timedelta(minutes=60) # Прием длится час
                 meet_link = settings.YANDEX_TELEMOST_LINK
                 new_appt = Appointment(
@@ -48,27 +52,29 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                     meet_link=meet_link
                 )
                 db.add(new_appt)
+                
+                # ИЩЕМ ИМЯ ЮЗЕРА ДЛЯ ТЕЛЕГРАМА
+                user = await db.get(User, user_id)
+                client_name = user.full_name if user and user.full_name else "Без имени"
+                
                 await db.commit()
 
-                # Создаем событие в Яндекс Календаре
+                # Создаем событие в Яндекс Календаре (передаем время с поясом МСК)
                 create_yandex_event(
                     start_time=start_time,
                     summary=f"🩺 Пациент: {pet_info}",
-                    description=f"Запись через сайт. Клиент ID: {user_id}"
+                    description=f"Запись через сайт.\nКлиент: {client_name}\nТелефон: {user.phone if user else ''}"
                 )
                 
-                # 2. Снимаем временную блокировку в Redis, слот теперь официально занят в БД
-                redis_key = f"slot_lock:{start_time.isoformat()}"
+                redis_key = f"slot_lock:{start_time_naive.isoformat()}"
                 await redis_client.delete(redis_key)
                 
-                # 3. вызов Telegram бота для уведомления врача и клиента!
-                print(f"✅ УСПЕШНАЯ ОПЛАТА! Запись создана: {start_time}")
                 msg_text = (
                     f"💰 <b>Новая оплаченная запись!</b>\n\n"
                     f"📅 Дата: <b>{start_time.strftime('%d.%m.%Y')}</b>\n"
                     f"⏰ Время: <b>{start_time.strftime('%H:%M')}</b>\n"
                     f"🐶 Пациент: {pet_info}\n"
-                    f"👤 Клиент ID: {user_id}"
+                    f"👤 Клиент: <b>{client_name}</b> (ID: {user_id})"
                 )
                 await send_telegram_message(settings.TG_DOCTOR_CHAT_ID, msg_text)
                 print(f"✅ УСПЕШНАЯ ОПЛАТА! Врач уведомлен.")

@@ -1,43 +1,30 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
-import { 
-  UserCircle, Download, Book, Loader2, Save, Check, 
-  Calendar, Video, RefreshCw, ChevronDown, ChevronUp, Star 
-} from 'lucide-react';
+import { UserCircle, Download, Book, Loader2, Save, Check, Calendar, Video, RefreshCw, ChevronDown, ChevronUp, Star } from 'lucide-react';
 
 export default function Profile() {
   const { user, checkAuth } = useAuthStore();
   const [guides, setGuides] = useState([]);
   const [appointments, setAppointments] = useState([]);
-  const[loadingGuides, setLoadingGuides] = useState(true);
+  const [loadingGuides, setLoadingGuides] = useState(true);
   const [loadingAppts, setLoadingAppts] = useState(true);
-  const [refreshing, setRefreshing] = useState(false); // Для кнопки обновления ссылки
+  const [updatingLinkId, setUpdatingLinkId] = useState(null); 
   
-  const[name, setName] = useState(user?.full_name || '');
+  const [name, setName] = useState(user?.full_name || '');
   const [savingName, setSavingName] = useState(false);
   const [saved, setSaved] = useState(false);
-
-  const[showHistory, setShowHistory] = useState(false);
-  const [ratings, setRatings] = useState({}); // Храним оценки приемов (звездочки)
+  const [showHistory, setShowHistory] = useState(false);
 
   const fetchAppointments = () => {
-    setRefreshing(true);
     apiClient.get('/appointments/me')
       .then(res => setAppointments(res.data))
       .catch(err => console.error("Ошибка загрузки записей", err))
-      .finally(() => {
-        setLoadingAppts(false);
-        setRefreshing(false);
-      });
+      .finally(() => setLoadingAppts(false));
   };
 
   useEffect(() => {
-    apiClient.get('/users/me/guides')
-      .then(res => setGuides(res.data))
-      .catch(err => console.error("Ошибка загрузки гайдов", err))
-      .finally(() => setLoadingGuides(false));
-
+    apiClient.get('/users/me/guides').then(res => setGuides(res.data)).finally(() => setLoadingGuides(false));
     fetchAppointments();
   },[]);
 
@@ -48,8 +35,6 @@ export default function Profile() {
       await checkAuth(); 
       setSaved(true);
       setTimeout(() => setSaved(false), 2000); 
-    } catch (error) {
-      console.error("Ошибка сохранения", error);
     } finally {
       setSavingName(false);
     }
@@ -68,43 +53,50 @@ export default function Profile() {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       alert("Не удалось скачать файл.");
-      console.error("Ошибка при скачивании", error);
+      console.error("Ошибка при скачивании гайда", error);
     }
   };
 
-  // ИСПРАВЛЕНИЕ: Форматируем время строго из строки бэкенда, игнорируя часовой пояс браузера
   const formatDateTime = (isoString) => {
-    if (!isoString) return '';
-    // Отрезаем всё после плюса (таймзону) и разбиваем по 'T'
-    const cleanString = isoString.split('+')[0].split('Z')[0];
-    const[datePart, timePart] = cleanString.split('T');
-    const [_, month, day] = datePart.split('-');
-    const time = timePart.substring(0, 5); // берем "HH:MM"
-    
-    const months =['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-    return `${parseInt(day)} ${months[parseInt(month) - 1]} в ${time}`;
+    const d = new Date(isoString);
+    return d.toLocaleString('ru-RU', { 
+      day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' 
+    });
   };
 
-  // Разделяем записи на Предстоящие и Историю
-  const now = new Date();
-  const upcomingAppts = [];
-  const historyAppts =[];
-
-  appointments.forEach(appt => {
-    const apptTime = new Date(appt.start_time).getTime();
-    // Если прием прошел (добавляем 1 час на сам прием)
-    if (apptTime + 60 * 60 * 1000 < now.getTime()) {
-      historyAppts.push(appt);
-    } else {
-      upcomingAppts.push(appt);
+  // УМНОЕ ОБНОВЛЕНИЕ ССЫЛКИ
+  const handleRefreshLink = async (apptId) => {
+    setUpdatingLinkId(apptId);
+    try {
+      await apiClient.patch(`/appointments/${apptId}/refresh-link`);
+      fetchAppointments(); // Перезапрашиваем список
+    } catch (e) {
+      alert("Ошибка при получении ссылки");
+      console.error(e);
+    } finally {
+      setUpdatingLinkId(null);
     }
-  });
+  };
+
+  // СОХРАНЕНИЕ ОЦЕНКИ
+  const handleRate = async (apptId, star) => {
+    // Оптимистичное обновление UI
+    setAppointments(prev => prev.map(a => a.id === apptId ? { ...a, rating: star } : a));
+    try {
+      await apiClient.patch(`/appointments/${apptId}/rating`, { rating: star });
+    } catch (e) {
+      console.error("Ошибка сохранения оценки", e);
+    }
+  };
+
+  // Разделяем по статусу (Бэкенд сам меняет статус на completed через 30 мин)
+  const upcomingAppts = appointments.filter(a => a.status === 'scheduled');
+  const historyAppts = appointments.filter(a => a.status === 'completed');
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
       <h1 className="text-3xl font-extrabold text-gray-900 mb-8">Личный кабинет</h1>
 
-      {/* --- МОИ ДАННЫЕ --- */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 mb-10">
         <div className="flex items-start gap-4 mb-6">
           <div className="bg-emerald-100 p-3 rounded-full text-emerald-600">
@@ -117,26 +109,14 @@ export default function Profile() {
         </div>
 
         <div className="max-w-md flex gap-3">
-          <input
-            type="text"
-            placeholder="Ваше имя"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary outline-none transition"
-          />
-          <button
-            onClick={handleSaveName}
-            disabled={savingName || name === user?.full_name}
-            className="bg-gray-900 text-white px-5 py-2 rounded-xl hover:bg-gray-800 transition flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {savingName ? <Loader2 className="w-5 h-5 animate-spin" /> : 
-             saved ? <Check className="w-5 h-5 text-emerald-400" /> : <Save className="w-5 h-5" />}
+          <input type="text" placeholder="Ваше имя" value={name} onChange={(e) => setName(e.target.value)} className="flex-1 px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary outline-none transition" />
+          <button onClick={handleSaveName} disabled={savingName || name === user?.full_name} className="bg-gray-900 text-white px-5 py-2 rounded-xl hover:bg-gray-800 transition flex items-center justify-center gap-2 disabled:opacity-50">
+            {savingName ? <Loader2 className="w-5 h-5 animate-spin" /> : saved ? <Check className="w-5 h-5 text-emerald-400" /> : <Save className="w-5 h-5" />}
             <span className="hidden sm:inline">Сохранить</span>
           </button>
         </div>
       </div>
 
-      {/* --- ПРЕДСТОЯЩИЕ ЗАПИСИ --- */}
       <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
         <Calendar className="w-6 h-6 text-primary" />
         Предстоящие приемы
@@ -152,36 +132,19 @@ export default function Profile() {
         <div className="space-y-4 mb-10">
           {upcomingAppts.map(appt => (
             <div key={appt.id} className="bg-white rounded-2xl p-6 shadow-sm border border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
-              {/* Зеленая полоска сбоку для красоты */}
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
-              
               <div>
-                <div className="text-lg font-bold text-gray-900 mb-1">
-                  {formatDateTime(appt.start_time)}
-                </div>
-                <div className="text-sm text-gray-500 bg-gray-50 inline-block px-3 py-1 rounded-lg">
-                  Пациент: {appt.pet_info || 'Не указано'}
-                </div>
+                <div className="text-lg font-bold text-gray-900 mb-1">{formatDateTime(appt.start_time)}</div>
+                <div className="text-sm text-gray-500 bg-gray-50 inline-block px-3 py-1 rounded-lg">Пациент: {appt.pet_info || 'Не указано'}</div>
               </div>
-              
               <div>
                 {appt.meet_link ? (
-                  <a 
-                    href={appt.meet_link} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="flex items-center justify-center gap-2 bg-blue-50 text-blue-600 px-5 py-2.5 rounded-xl font-medium hover:bg-blue-100 transition"
-                  >
-                    <Video className="w-5 h-5" />
-                    Подключиться к звонку
+                  <a href={appt.meet_link} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 bg-blue-50 text-blue-600 px-5 py-2.5 rounded-xl font-medium hover:bg-blue-100 transition">
+                    <Video className="w-5 h-5" /> Подключиться к звонку
                   </a>
                 ) : (
-                  <button 
-                    onClick={fetchAppointments}
-                    disabled={refreshing}
-                    className="flex items-center justify-center gap-2 bg-amber-50 text-amber-600 px-5 py-2.5 rounded-xl font-medium border border-amber-100 hover:bg-amber-100 transition w-full sm:w-auto"
-                  >
-                    <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+                  <button onClick={() => handleRefreshLink(appt.id)} disabled={updatingLinkId === appt.id} className="flex items-center justify-center gap-2 bg-amber-50 text-amber-600 px-5 py-2.5 rounded-xl font-medium border border-amber-100 hover:bg-amber-100 transition w-full sm:w-auto">
+                    <RefreshCw className={`w-5 h-5 ${updatingLinkId === appt.id ? 'animate-spin' : ''}`} />
                     Запросить ссылку
                   </button>
                 )}
@@ -191,44 +154,26 @@ export default function Profile() {
         </div>
       )}
 
-      {/* --- ИСТОРИЯ ЗАПИСЕЙ (СПОЙЛЕР) --- */}
       {historyAppts.length > 0 && (
         <div className="mb-12">
-          <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-2 text-lg font-bold text-gray-600 hover:text-gray-900 transition"
-          >
-            История приемов
-            {showHistory ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-lg font-bold text-gray-600 hover:text-gray-900 transition">
+            История приемов {showHistory ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
           </button>
-
           {showHistory && (
             <div className="mt-4 space-y-4">
               {historyAppts.map(appt => (
                 <div key={appt.id} className="bg-gray-50 rounded-2xl p-6 border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 opacity-80 hover:opacity-100 transition">
                   <div>
-                    <div className="text-gray-600 font-bold mb-1">
-                      {formatDateTime(appt.start_time)}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Пациент: {appt.pet_info || 'Не указано'}
-                    </div>
+                    <div className="text-gray-600 font-bold mb-1">{formatDateTime(appt.start_time)}</div>
+                    <div className="text-sm text-gray-500">Пациент: {appt.pet_info || 'Не указано'}</div>
                   </div>
-                  
-                  {/* Блок оценки (звездочки) */}
                   <div>
-                    <div className="text-sm font-medium text-gray-500 mb-2 text-center sm:text-right">Оцените прием</div>
+                    <div className="text-sm font-medium text-gray-500 mb-2 text-center sm:text-right">
+                      {appt.rating ? "Ваша оценка" : "Оцените прием"}
+                    </div>
                     <div className="flex gap-1 justify-center sm:justify-end">
                       {[1, 2, 3, 4, 5].map(star => (
-                        <button
-                          key={star}
-                          onClick={() => setRatings({...ratings, [appt.id]: star})}
-                          className={`transition ${
-                            (ratings[appt.id] || 0) >= star 
-                              ? 'text-amber-400' 
-                              : 'text-gray-300 hover:text-amber-200'
-                          }`}
-                        >
+                        <button key={star} onClick={() => handleRate(appt.id, star)} className={`transition ${(appt.rating || 0) >= star ? 'text-amber-400' : 'text-gray-300 hover:text-amber-200'}`}>
                           <Star className="w-7 h-7 fill-current" />
                         </button>
                       ))}
@@ -240,13 +185,12 @@ export default function Profile() {
           )}
         </div>
       )}
-
-      {/* --- КУПЛЕННЫЕ ГАЙДЫ --- */}
+      
+      {/* ... Блок "Мои гайды" (остается таким же как был) ... */}
       <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
         <Book className="w-6 h-6 text-primary" />
         Мои гайды
       </h2>
-      
       {loadingGuides ? (
         <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       ) : guides.length === 0 ? (

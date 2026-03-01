@@ -64,6 +64,7 @@ class AppointmentResponse(AppointmentBase):
     end_time: datetime
     status: str
     meet_link: Optional[str] = None
+    rating: Optional[int] = None
 
     class Config:
         from_attributes = True
