@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Book, FileText, Loader2, ShoppingCart } from 'lucide-react';
+import { Book, Loader2, Eye } from 'lucide-react';
 import { apiClient } from '../api/client';
-import { useAuthStore } from '../store/authStore';
-import { toast } from 'sonner';
 
 export default function Home() {
   const [guides, setGuides] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [buyingId, setBuyingId] = useState(null); // ID гайда, который сейчас покупают
-  
-  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
   const navigate = useNavigate();
 
   // Загружаем гайды при открытии страницы
@@ -20,27 +15,6 @@ export default function Home() {
       .catch(err => console.error("Ошибка загрузки гайдов:", err))
       .finally(() => setLoading(false));
   },[]);
-
-  // Функция покупки
-  const handleBuy = async (guideId) => {
-    if (!isAuthenticated) {
-      // Если не залогинен - кидаем на страницу входа
-      navigate('/login');
-      return;
-    }
-
-    setBuyingId(guideId);
-    try {
-      // Дергаем эндпоинт генерации ссылки ЮKassa
-      const res = await apiClient.post(`/payments/buy-guide/${guideId}`);
-      // Перенаправляем пользователя на страницу оплаты ЮKassa
-      window.location.assign(res.data.payment_url);
-    } catch (error) {
-      console.error("Ошибка при создании платежа:", error);
-      toast.error("Ошибка при создании платежа. Попробуйте позже.");
-      setBuyingId(null);
-    }
-  };
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>;
@@ -91,19 +65,14 @@ export default function Home() {
                   </div>
                 )}
                 
-                {/* Кнопки внизу (прижимаются к низу благодаря flex-grow у родителя) */}
-                <div className="mt-auto flex gap-3">
+                {/* Кнопки внизу */}
+                <div className="mt-auto">
                   <button 
-                    onClick={() => handleBuy(guide.id)}
-                    disabled={buyingId === guide.id}
-                    className="flex-1 bg-primary text-white py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-emerald-600 transition disabled:opacity-70"
+                    onClick={() => navigate(`/guides/${guide.id}`)}
+                    className="w-full bg-gray-50 text-gray-900 border border-gray-200 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-300 transition"
                   >
-                    {buyingId === guide.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShoppingCart className="w-5 h-5" />}
-                    Купить
-                  </button>
-                  {/* Кнопку "Подробнее" сделаем позже, если захочешь отдельную страницу для гайда */}
-                  <button className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition">
-                    <FileText className="w-5 h-5" />
+                    <Eye className="w-5 h-5 text-gray-500" />
+                    Смотреть подробнее
                   </button>
                 </div>
               </div>

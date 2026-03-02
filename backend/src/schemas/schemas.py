@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 
 # --- АВТОРИЗАЦИЯ ---
@@ -14,10 +14,27 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+# --- КОММЕНТАРИИ И ЛАЙКИ ---
+class CommentBase(BaseModel):
+    text: str
+
+class CommentCreate(CommentBase):
+    pass
+
+class CommentResponse(CommentBase):
+    id: int
+    user_id: int
+    user_name: Optional[str] = "Пользователь" # Имя автора
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # --- ГАЙДЫ ---
 class GuideBase(BaseModel):
     title: str
     description: Optional[str] = None
+    free_snippet: Optional[str] = None
     price: float
     is_active: bool = True
 
@@ -26,10 +43,16 @@ class GuideCreate(GuideBase):
 
 class GuideResponse(GuideBase):
     id: int
+    author_id: Optional[int] = None
     created_at: datetime
 
     class Config:
         from_attributes = True # Позволяет Pydantic читать данные из моделей SQLAlchemy
+
+class GuideDetailResponse(GuideResponse):
+    likes_count: int = 0
+    comments: List[CommentResponse] = []
+    is_liked: bool = False # Лайкнул ли текущий юзер
 
 # --- ДАННЫЕ ТОКЕНА ---
 class TokenData(BaseModel):
