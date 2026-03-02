@@ -23,27 +23,33 @@ async def get_active_guides(db: AsyncSession = Depends(get_db)):
 @router.post("", response_model=GuideResponse)
 async def create_guide(
         title: str = Form(...),
-        description: str = Form(None),
+        description: str = Form(...), # Теперь обязательное
         price: float = Form(...),
-        file: UploadFile = File(...), # <--- Принимаем файл
+        free_snippet: str = Form(None), # <--- НОВОЕ ПОЛЕ (краткий фрагмент)
+        file: UploadFile = File(...),
         db: AsyncSession = Depends(get_db),
-        # current_user: User = Depends(get_current_user) # Потом раскомментируй, чтобы могли только админы):
+        current_user: User = Depends(get_current_user) # <--- ОБЯЗАТЕЛЬНАЯ АВТОРИЗАЦИЯ
     ):
-    """Создать новый гайд (Потом закроем этот эндпоинт только для Admin)"""
+    """Создать новый гайд (Только для врачей и админов)"""
+    
+    if current_user.role not in ["doctor", "superadmin"]:
+        raise HTTPException(status_code=403, detail="У вас нет прав выкладывать гайды")
+
     # 1. Загружаем файл в MongoDB GridFS
-    # upload_from_stream возвращает ID файла внутри Mongo
     file_id = await fs.upload_from_stream(
         filename=file.filename,
         source=file.file,
         metadata={"content_type": file.content_type}
     )
     
-    # 2. Создаем запись о гайде в Postgres, сохраняя ссылку на файл (file_id)
+    # 2. Создаем запись о гайде
     new_guide = Guide(
         title=title,
         description=description,
+        free_snippet=free_snippet, # Сохраняем сниппет
         price=price,
-        mongo_file_id=str(file_id) # Превращаем ObjectId в строку
+        mongo_file_id=str(file_id),
+        author_id=current_user.id # Привязываем к автору
     )
     db.add(new_guide)
     await db.commit()

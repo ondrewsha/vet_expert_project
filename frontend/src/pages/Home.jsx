@@ -76,9 +76,19 @@ export default function Home() {
               {/* Текст */}
               <div className="p-6 flex flex-col grow">
                 <h3 className="text-xl font-bold text-gray-900 mb-2">{guide.title}</h3>
-                <p className="text-gray-500 text-sm mb-6 line-clamp-3">
-                  {guide.description || "Подробное руководство по уходу и здоровью вашего питомца."}
+                
+                {/* Описание */}
+                <p className="text-gray-500 text-sm mb-4 line-clamp-2">
+                  {guide.description || "Подробное руководство."}
                 </p>
+
+                {/* Бесплатный фрагмент (Сниппет) */}
+                {guide.free_snippet && (
+                  <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200 text-sm text-gray-700 italic relative">
+                    <span className="absolute -top-3 left-4 bg-white px-2 text-xs font-bold text-emerald-600 uppercase tracking-wider">Фрагмент</span>
+                    "{guide.free_snippet}"
+                  </div>
+                )}
                 
                 {/* Кнопки внизу (прижимаются к низу благодаря flex-grow у родителя) */}
                 <div className="mt-auto flex gap-3">

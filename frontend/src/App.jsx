@@ -9,6 +9,7 @@ import Profile from './pages/Profile';
 import Consultation from './pages/Consultation';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import DoctorDashboard from './pages/DoctorDashboard';
 
 // Компонент-обертка для защиты приватных роутов
 const ProtectedRoute = ({ children }) => {
@@ -46,15 +47,8 @@ function App() {
             <Route path="/consultation" element={<Consultation />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
-            
-            <Route 
-              path="/profile" 
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              } 
-            />
+            <Route path="/doctor" element={<ProtectedRoute><DoctorDashboard /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           </Routes>
         </main>
       </div>

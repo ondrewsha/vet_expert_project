@@ -140,7 +140,7 @@ export default function Profile() {
         <h1 className="text-3xl font-extrabold text-gray-900">Личный кабинет</h1>
         
         {/* КНОПКА БЭК-ОФИСА (Только для врачей и админов) */}
-        {(user?.role === 'superadmin' || user?.role === 'doctor') && (
+        {(user?.role === 'superadmin') && (
           <button 
             onClick={async () => {
               // 1. Запрашиваем код (используем существующий эндпоинт авторизации)

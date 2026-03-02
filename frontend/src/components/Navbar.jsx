@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { BookOpen, CalendarHeart, User, LogOut } from 'lucide-react';
+import { BookOpen, CalendarHeart, User, LogOut, UploadCloud } from 'lucide-react';
 
 export default function Navbar() {
-  const { isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout } = useAuthStore();
 
   return (
     <nav className="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-50">
@@ -30,6 +30,12 @@ export default function Navbar() {
               <CalendarHeart className="w-4 h-4" />
               Онлайн-прием
             </Link>
+            {(user?.role === 'doctor' || user?.role === 'superadmin') && (
+              <Link to="/doctor" className="bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-200 transition text-sm font-bold flex items-center gap-2">
+                <UploadCloud className="w-4 h-4" />
+                Опубликовать гайд
+              </Link>
+            )}
           </div>
 
           {/* Профиль / Вход (Справа) */}
