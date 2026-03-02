@@ -59,7 +59,7 @@ class AppointmentBase(BaseModel):
     pet_info: Optional[str] = None
 
 class AppointmentCreate(AppointmentBase):
-    pass
+    doctor_id: Optional[int] = None
 
 class AppointmentResponse(AppointmentBase):
     id: int
@@ -67,6 +67,22 @@ class AppointmentResponse(AppointmentBase):
     status: str
     meet_link: Optional[str] = None
     rating: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+# --- ВРАЧИ ---
+class DoctorProfileResponse(BaseModel):
+    description: Optional[str] = None
+    photo_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class DoctorResponse(BaseModel):
+    id: int
+    full_name: Optional[str] = None
+    doctor_profile: Optional[DoctorProfileResponse] = None
 
     class Config:
         from_attributes = True

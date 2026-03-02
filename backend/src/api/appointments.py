@@ -1,15 +1,16 @@
 from datetime import datetime, timedelta, date, time
-from typing import List
+from typing import List, Optional
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
 from src.services.telegram_service import send_telegram_message
 from src.database import get_db, redis_client
-from src.models import User, Appointment
-from src.schemas.schemas import AppointmentCreate, AppointmentResponse
+from src.models import User, Appointment, DoctorProfile
+from src.schemas.schemas import AppointmentCreate, AppointmentResponse, DoctorResponse
 from src.core.security import get_current_user
 from src.services.yookassa_service import create_payment_url
 from src.services.yandex_calendar_service import get_busy_slots_yandex
@@ -24,17 +25,23 @@ CONSULTATION_DURATION_MINUTES = 60
 class RatingUpdate(BaseModel):
     rating: int
 
+@router.get("/doctors", response_model=List[DoctorResponse])
+async def get_doctors(db: AsyncSession = Depends(get_db)):
+    """Получить список всех врачей для отображения на странице записи"""
+    result = await db.execute(
+        select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"]))
+    )
+    return result.scalars().all()
+
 @router.get("/available")
-async def get_available_slots(target_date: date, db: AsyncSession = Depends(get_db)):
+async def get_available_slots(target_date: date, doctor_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
     all_slots =[]
     moscow_tz = ZoneInfo("Europe/Moscow")
-    
     current_time = datetime.combine(target_date, time(WORK_START_HOUR, 0))
     end_time = datetime.combine(target_date, time(WORK_END_HOUR, 0))
     now = datetime.now(moscow_tz).replace(tzinfo=None) 
     
     while current_time < end_time:
-        # Убираем прошедшее время
         if target_date == now.date() and current_time <= now + timedelta(minutes=15):
             current_time += timedelta(minutes=CONSULTATION_DURATION_MINUTES)
             continue
@@ -44,41 +51,71 @@ async def get_available_slots(target_date: date, db: AsyncSession = Depends(get_
     start_of_day = datetime.combine(target_date, time.min).replace(tzinfo=moscow_tz)
     end_of_day = datetime.combine(target_date, time.max).replace(tzinfo=moscow_tz)
 
-    yandex_busy = get_busy_slots_yandex(start_of_day, end_of_day)
-    
-    result = await db.execute(
-        select(Appointment.start_time).where(
-            and_(
-                Appointment.start_time >= start_of_day,
-                Appointment.start_time <= end_of_day,
-                Appointment.status.in_(["scheduled", "completed"])
+    # 1. Получаем список врачей (одного или всех)
+    query = select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"]))
+    if doctor_id:
+        query = query.where(User.id == doctor_id)
+    result = await db.execute(query)
+    doctors = result.scalars().all()
+
+    if not doctors:
+        return {"date": target_date, "available_slots":[]}
+
+    # 2. Собираем занятые слоты для каждого врача
+    doctors_busy_data = {}
+    for doc in doctors:
+        # БД
+        db_res = await db.execute(
+            select(Appointment.start_time).where(
+                and_(
+                    Appointment.doctor_id == doc.id,
+                    Appointment.start_time >= start_of_day,
+                    Appointment.start_time <= end_of_day,
+                    Appointment.status.in_(["scheduled", "completed"])
+                )
             )
         )
-    )
-    # Корректно читаем из БД в часовом поясе МСК
-    db_booked_slots = []
-    for row in result.all():
-        dt = row[0]
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(moscow_tz)
-        db_booked_slots.append(dt.replace(tzinfo=None))
+        db_slots = [row[0].astimezone(moscow_tz).replace(tzinfo=None) if row[0].tzinfo else row[0].replace(tzinfo=None) for row in db_res.all()]
+        
+        # Яндекс
+        yandex_slots =[]
+        if doc.doctor_profile and doc.doctor_profile.yandex_email:
+            yandex_slots = get_busy_slots_yandex(
+                start_of_day, end_of_day, 
+                doc.doctor_profile.yandex_email, doc.doctor_profile.yandex_password
+            )
+        
+        doctors_busy_data[doc.id] = {"db": db_slots, "yandex": yandex_slots}
 
+    # 3. Проверяем слоты. Слот доступен, если ХОТЯ БЫ ОДИН запрошенный врач свободен
     available_slots =[]
     for slot in all_slots:
         slot_end = slot + timedelta(minutes=60)
-        
-        is_busy_yandex = False
-        for b_start, b_end in yandex_busy:
-            if not (slot_end <= b_start or slot >= b_end):
-                is_busy_yandex = True
-                break
-        
-        if is_busy_yandex or slot in db_booked_slots:
-            continue
+        is_slot_available = False
+
+        for doc in doctors:
+            doc_data = doctors_busy_data[doc.id]
+            is_busy = False
             
-        redis_key = f"slot_lock:{slot.isoformat()}"
-        is_locked = await redis_client.get(redis_key)
-        if not is_locked:
+            if slot in doc_data["db"]:
+                is_busy = True
+            else:
+                for b_start, b_end in doc_data["yandex"]:
+                    if not (slot_end <= b_start or slot >= b_end):
+                        is_busy = True
+                        break
+            
+            # Проверяем Redis (вдруг кто-то прямо сейчас оплачивает этого врача)
+            if not is_busy:
+                is_locked = await redis_client.get(f"slot_lock:{doc.id}:{slot.isoformat()}")
+                if is_locked:
+                    is_busy = True
+
+            if not is_busy:
+                is_slot_available = True
+                break # Нашли свободного врача для этого слота!
+                
+        if is_slot_available:
             available_slots.append(slot)
 
     return {"date": target_date, "available_slots": available_slots}
@@ -86,65 +123,98 @@ async def get_available_slots(target_date: date, db: AsyncSession = Depends(get_
 @router.post("/book")
 async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     slot_time = appt_in.start_time.replace(tzinfo=None)
-    redis_key = f"slot_lock:{slot_time.isoformat()}"
+    moscow_tz = ZoneInfo("Europe/Moscow")
     
-    if await redis_client.get(redis_key):
-        raise HTTPException(status_code=409, detail="Слот занят.")
+    # Ищем всех подходящих врачей
+    query = select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"]))
+    if appt_in.doctor_id:
+        query = query.where(User.id == appt_in.doctor_id)
+    result = await db.execute(query)
+    doctors = result.scalars().all()
+
+    if not doctors:
+        raise HTTPException(status_code=400, detail="Врачи не найдены")
+
+    # Ищем ПЕРВОГО СВОБОДНОГО врача на этот слот
+    assigned_doctor = None
+    for doc in doctors:
+        is_locked = await redis_client.get(f"slot_lock:{doc.id}:{slot_time.isoformat()}")
+        if is_locked: continue
         
+        # Легкая проверка БД, чтобы точно не наложилось
+        overlap = await db.execute(
+            select(Appointment).where(
+                Appointment.doctor_id == doc.id,
+                Appointment.start_time == slot_time.replace(tzinfo=moscow_tz),
+                Appointment.status.in_(["scheduled", "completed"])
+            )
+        )
+        if overlap.scalars().first(): continue
+        
+        assigned_doctor = doc
+        break
+
+    if not assigned_doctor:
+        raise HTTPException(status_code=409, detail="К сожалению, это время только что заняли. Выберите другое.")
+
+    # Лочим слот конкретного врача
+    redis_key = f"slot_lock:{assigned_doctor.id}:{slot_time.isoformat()}"
     lock_data = f"{current_user.id}|{appt_in.pet_info or ''}"
     await redis_client.set(redis_key, lock_data, ex=900)
 
-    # ВРЕМЕННО: Ищем тебя (суперадмина), чтобы привязать запись, пока мы не сделали выбор врачей
-    doctor_query = await db.execute(select(User).where(User.role.in_(["superadmin", "doctor"])))
-    default_doctor = doctor_query.scalars().first()
-    if not default_doctor:
-        raise HTTPException(status_code=500, detail="Нет доступных врачей в базе")
+    # Достаем Телемост врача (или дефолтный)
+    meet_link = assigned_doctor.doctor_profile.telemost_link if assigned_doctor.doctor_profile and assigned_doctor.doctor_profile.telemost_link else settings.YANDEX_TELEMOST_LINK
 
-    # СЦЕНАРИЙ 1: У КЛИЕНТА ЕСТЬ БАЛАНС (БЕЗ ЮКАССЫ)
+    # --- ЗАПИСЬ С БАЛАНСА ---
     if current_user.unused_consultations > 0:
-        current_user.unused_consultations -= 1 # Списываем баланс
-        
-        moscow_tz = ZoneInfo("Europe/Moscow")
+        current_user.unused_consultations -= 1
         start_time_tz = slot_time.replace(tzinfo=moscow_tz)
-        end_time = start_time_tz + timedelta(minutes=60)
         
-        # Создаем запись сразу!
         new_appt = Appointment(
             user_id=current_user.id,
-            doctor_id=default_doctor.id,
+            doctor_id=assigned_doctor.id,
             start_time=start_time_tz,
-            end_time=end_time,
+            end_time=start_time_tz + timedelta(minutes=60),
             status="scheduled",
             pet_info=appt_in.pet_info,
-            meet_link=settings.YANDEX_TELEMOST_LINK
+            meet_link=meet_link
         )
         db.add(new_appt)
         await db.commit()
-        await redis_client.delete(redis_key) # Снимаем лок
+        await redis_client.delete(redis_key)
         
-        # Уведомляем
-        msg = f"💰 <b>Запись с баланса!</b>\n📅 {start_time_tz.strftime('%d.%m.%Y %H:%M')}\n🐶 {appt_in.pet_info}"
-        await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg)
+        # --- УВЕДОМЛЕНИЯ ПРИ ОПЛАТЕ С БАЛАНСА ---
+        from src.services.telegram_service import send_telegram_message
+        time_str = start_time_tz.strftime('%d.%m.%Y %H:%M')
         
-        # Возвращаем payment_url: None, чтобы фронт понял, что платить не надо
+        # 1. Суперадмину
+        await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, f"💰 <b>Запись с баланса!</b>\n📅 {time_str}\nВрач: {assigned_doctor.full_name}\n🐶 {appt_in.pet_info}")
+        
+        # 2. Врачу
+        if assigned_doctor.telegram_id:
+            await send_telegram_message(assigned_doctor.telegram_id, f"🩺 <b>Новая запись!</b>\n📅 {time_str}\n🐶 {appt_in.pet_info}")
+        
+        # 3. Клиенту
+        if current_user.telegram_id:
+            await send_telegram_message(current_user.telegram_id, f"✅ <b>Запись подтверждена!</b>\n📅 {time_str}\nВрач: {assigned_doctor.full_name or 'Специалист'}\n🔗 <a href='{meet_link}'>Ссылка на звонок</a>")
+
         return {"message": "Оплачено с баланса", "payment_url": None, "slot": slot_time}
 
-    # СЦЕНАРИЙ 2: НЕТ БАЛАНСА -> ИДЕМ В ЮКАССУ
+    # --- ЗАПИСЬ ЧЕРЕЗ ЮКАССУ ---
     metadata = {
         "type": "appointment",
         "user_id": str(current_user.id),
-        "doctor_id": str(default_doctor.id), # <--- Передаем доктора в платежку
+        "doctor_id": str(assigned_doctor.id), # <--- Точно знаем, к кому
         "start_time": slot_time.isoformat(),
         "pet_info": appt_in.pet_info or "Не указано"
     }
     
     payment_url = await create_payment_url(
         amount=2000.00,
-        description=f"Онлайн-консультация с ветеринаром ({slot_time.strftime('%d.%m.%Y %H:%M')})",
+        description=f"Консультация: {assigned_doctor.full_name or 'Врач'} ({slot_time.strftime('%d.%m.%Y %H:%M')})",
         metadata=metadata,
         return_url="https://твой-сайт.ru/profile"
     )
-    
     return {"message": "Забронировано", "payment_url": payment_url, "slot": slot_time}
 
 @router.get("/me", response_model=List[AppointmentResponse])

@@ -1,4 +1,5 @@
 from zoneinfo import ZoneInfo
+from sqlalchemy import select
 
 from fastapi import APIRouter, Request, Depends, BackgroundTasks, HTTPException
 from yookassa.domain.notification import WebhookNotificationFactory
@@ -6,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 
 from src.database import get_db, redis_client
-from src.models import Appointment, Guide, User
+from src.models import Appointment, Guide, User, DoctorProfile
 from src.core.security import get_current_user
 from src.services.telegram_service import send_telegram_message
 from src.services.yookassa_service import create_payment_url
@@ -42,44 +43,55 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 start_time_naive = datetime.fromisoformat(metadata.get("start_time"))
                 start_time = start_time_naive.replace(tzinfo=moscow_tz)
                 
-                end_time = start_time + timedelta(minutes=60) # Прием длится час
-                meet_link = settings.YANDEX_TELEMOST_LINK
+                # Достаем врача, чтобы взять его ссылку и ТГ
+                doctor = await db.get(User, doctor_id)
+                # Нужно подгрузить профиль врача, так как мы берем его по ID
+                doc_profile_res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == doctor_id))
+                doc_profile = doc_profile_res.scalars().first()
+
+                meet_link = doc_profile.telemost_link if doc_profile and doc_profile.telemost_link else settings.YANDEX_TELEMOST_LINK
+                
                 new_appt = Appointment(
-                    user_id=user_id,
-                    doctor_id=doctor_id,
-                    start_time=start_time,
-                    end_time=end_time,
-                    status="scheduled",
-                    pet_info=pet_info,
-                    meet_link=meet_link
+                    user_id=user_id, doctor_id=doctor_id, start_time=start_time,
+                    end_time=start_time + timedelta(minutes=60), status="scheduled",
+                    pet_info=pet_info, meet_link=meet_link
                 )
                 db.add(new_appt)
                 
-                # ИЩЕМ ИМЯ ЮЗЕРА ДЛЯ ТЕЛЕГРАМА
                 user = await db.get(User, user_id)
                 client_name = user.full_name if user and user.full_name else "Без имени"
                 
                 await db.commit()
 
-                # Создаем событие в Яндекс Календаре (передаем время с поясом МСК)
-                create_yandex_event(
-                    start_time=start_time,
-                    summary=f"🩺 Пациент: {pet_info}",
-                    description=f"Запись через сайт.\nКлиент: {client_name}\nТелефон: {user.phone if user else ''}"
-                )
+                # Создаем событие в Яндекс Календаре ВРАЧА
+                if doc_profile and doc_profile.yandex_email:
+                    create_yandex_event(
+                        start_time=start_time,
+                        summary=f"🩺 Пациент: {pet_info}",
+                        description=f"Клиент: {client_name}\nТелефон: {user.phone if user else ''}",
+                        email=doc_profile.yandex_email,
+                        password=doc_profile.yandex_password
+                    )
                 
-                redis_key = f"slot_lock:{start_time_naive.isoformat()}"
-                await redis_client.delete(redis_key)
+                await redis_client.delete(f"slot_lock:{doctor_id}:{start_time_naive.isoformat()}")
                 
-                msg_text = (
-                    f"💰 <b>Новая оплаченная запись!</b>\n\n"
-                    f"📅 Дата: <b>{start_time.strftime('%d.%m.%Y')}</b>\n"
-                    f"⏰ Время: <b>{start_time.strftime('%H:%M')}</b>\n"
-                    f"🐶 Пациент: {pet_info}\n"
-                    f"👤 Клиент: <b>{client_name}</b> (ID: {user_id})"
+                time_str = start_time.strftime('%d.%m.%Y %H:%M')
+                doc_name = doctor.full_name if doctor else 'Специалист'
+
+                # 1. Уведомление Суперадмину
+                await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, 
+                    f"💰 <b>Оплачена запись!</b>\n📅 {time_str}\nВрач: {doc_name}\n🐶 {pet_info}\n👤 {client_name} (ID: {user_id})"
                 )
-                await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg_text)
-                print(f"✅ УСПЕШНАЯ ОПЛАТА! Врач уведомлен.")
+                # 2. Уведомление Врачу
+                if doctor and doctor.telegram_id:
+                    await send_telegram_message(doctor.telegram_id, 
+                        f"🩺 <b>У вас новая запись!</b>\n📅 {time_str}\n🐶 {pet_info}\n🔗 Ссылка на вашу комнату: {meet_link}"
+                    )
+                # 3. Уведомление Клиенту
+                if user and user.telegram_id:
+                    await send_telegram_message(user.telegram_id, 
+                        f"✅ <b>Оплата прошла успешно!</b>\nВы записаны к врачу: {doc_name}\n📅 {time_str}\n🔗 <a href='{meet_link}'>Ссылка на видеозвонок</a>"
+                    )
             
             elif metadata.get("type") == "guide":
                 user_id = int(metadata.get("user_id"))
