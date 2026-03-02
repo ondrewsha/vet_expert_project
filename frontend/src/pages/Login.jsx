@@ -10,7 +10,8 @@ export default function Login() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const[needBotReg, setNeedBotReg] = useState(false); // Нужно ли идти в бота
+  const [needBotReg, setNeedBotReg] = useState(false); // Нужно ли идти в бота
+  const [agreed, setAgreed] = useState(false);
 
   const loginUser = useAuthStore((state) => state.login);
   const navigate = useNavigate();
@@ -102,6 +103,23 @@ export default function Login() {
               />
             </div>
 
+            {/* ЮРИДИЧЕСКАЯ ГАЛОЧКА */}
+            <div className="flex items-start gap-3 mt-4">
+              <input
+                type="checkbox"
+                id="terms"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                className="mt-1 w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary"
+              />
+              <label htmlFor="terms" className="text-xs text-gray-500">
+                Я соглашаюсь с{' '}
+                <a href="/terms" target="_blank" className="text-primary hover:underline">Пользовательским соглашением</a>
+                {' '}и{' '}
+                <a href="/privacy" target="_blank" className="text-primary hover:underline">Политикой обработки персональных данных</a>.
+              </label>
+            </div>
+
             {needBotReg && (
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 flex flex-col items-center text-center space-y-3">
                 <Bot className="w-8 h-8 text-blue-600" />
@@ -124,7 +142,7 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreed}
               className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-xl text-white bg-primary hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary font-medium transition-all disabled:opacity-50"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Получить код'}

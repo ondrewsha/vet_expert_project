@@ -7,6 +7,8 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import Profile from './pages/Profile';
 import Consultation from './pages/Consultation';
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
 
 // Компонент-обертка для защиты приватных роутов
 const ProtectedRoute = ({ children }) => {
@@ -42,6 +44,8 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/consultation" element={<Consultation />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
             
             <Route 
               path="/profile" 
