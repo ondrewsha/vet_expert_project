@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { BookOpen, CalendarHeart, User, LogOut, UploadCloud } from 'lucide-react';
+import { BookOpen, CalendarHeart, User, LogOut, UploadCloud, Ticket } from 'lucide-react';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
@@ -42,26 +42,28 @@ export default function Navbar() {
           <div className="flex items-center space-x-4">
             {isAuthenticated ? (
               <>
-                <Link 
-                  to="/profile" 
-                  className="text-gray-600 hover:text-primary transition flex items-center gap-2 font-medium"
-                >
+                {/* БАЛАНС */}
+                {user?.unused_consultations > 0 && (
+                  <div className="group relative flex items-center gap-1 bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full text-sm font-bold cursor-help">
+                    <Ticket className="w-4 h-4" />
+                    {user.unused_consultations}
+                    {/* Тултип */}
+                    <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 p-3 rounded-xl shadow-xl text-xs text-gray-600 font-normal opacity-0 group-hover:opacity-100 transition pointer-events-none z-50">
+                      У вас есть оплаченные консультации. Используйте их при записи.
+                    </div>
+                  </div>
+                )}
+
+                <Link to="/profile" className="text-gray-600 hover:text-primary transition flex items-center gap-2 font-medium">
                   <User className="w-5 h-5" />
                   <span className="hidden sm:block">Кабинет</span>
                 </Link>
-                <button 
-                  onClick={logout}
-                  className="p-2 text-gray-400 hover:text-red-500 transition rounded-full hover:bg-red-50"
-                  title="Выйти"
-                >
+                <button onClick={logout} className="p-2 text-gray-400 hover:text-red-500 transition rounded-full hover:bg-red-50">
                   <LogOut className="w-5 h-5" />
                 </button>
               </>
             ) : (
-              <Link 
-                to="/login" 
-                className="bg-primary text-white px-5 py-2 rounded-xl font-medium hover:bg-emerald-600 transition shadow-sm"
-              >
+              <Link to="/login" className="bg-primary text-white px-5 py-2 rounded-xl font-medium hover:bg-emerald-600 transition shadow-sm">
                 Войти
               </Link>
             )}

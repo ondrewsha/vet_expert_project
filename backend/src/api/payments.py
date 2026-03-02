@@ -1,5 +1,5 @@
 from zoneinfo import ZoneInfo
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from fastapi import APIRouter, Request, Depends, BackgroundTasks, HTTPException
 from yookassa.domain.notification import WebhookNotificationFactory
@@ -63,15 +63,25 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 
                 await db.commit()
 
+                yandex_event_url = None
+
                 # Создаем событие в Яндекс Календаре ВРАЧА
                 if doc_profile and doc_profile.yandex_email:
-                    create_yandex_event(
+                    yandex_event_url = create_yandex_event(
                         start_time=start_time,
                         summary=f"🩺 Пациент: {pet_info}",
                         description=f"Клиент: {client_name}\nТелефон: {user.phone if user else ''}",
                         email=doc_profile.yandex_email,
                         password=doc_profile.yandex_password
                     )
+                
+                if yandex_event_url:
+                    await db.execute(
+                        update(Appointment)
+                        .where(Appointment.id == new_appt.id)
+                        .values(google_event_id=yandex_event_url)
+                    )
+                    await db.commit()
                 
                 await redis_client.delete(f"slot_lock:{doctor_id}:{start_time_naive.isoformat()}")
                 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Phone, KeyRound, Bot, ArrowRight, Loader2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { formatPhone } from '../lib/utils';
 
 export default function Login() {
   const [step, setStep] = useState(1); // 1 - ввод телефона, 2 - ввод кода
@@ -24,13 +25,7 @@ export default function Login() {
     setNeedBotReg(false);
 
     try {
-      // Форматируем телефон: заменяем 8 на +7, удаляем пробелы
-      let formattedPhone = phone.replace(/\s+/g, '');
-      if (formattedPhone.startsWith('8')) {
-        formattedPhone = '+7' + formattedPhone.slice(1);
-      } else if (!formattedPhone.startsWith('+')) {
-        formattedPhone = '+' + formattedPhone;
-      }
+      let formattedPhone = phone.replace(/[^\d+]/g, '');
       setPhone(formattedPhone);
 
       const res = await apiClient.post('/auth/send-code', { phone: formattedPhone });
@@ -98,7 +93,7 @@ export default function Login() {
                 required
                 className="w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all"
                 placeholder="+7 (999) 000-00-00"
-                value={phone}
+                value={formatPhone(phone)}
                 onChange={(e) => setPhone(e.target.value)}
               />
             </div>

@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 import { BookOpen, UploadCloud, Loader2, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 export default function DoctorDashboard() {
   const { user } = useAuthStore();
@@ -25,7 +26,7 @@ export default function DoctorDashboard() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!file) {
-      alert("Пожалуйста, выберите PDF файл.");
+      toast.error("Пожалуйста, выберите PDF файл.");
       return;
     }
 
@@ -53,7 +54,7 @@ export default function DoctorDashboard() {
       }, 2000);
       
     } catch (err) {
-      alert("Ошибка при загрузке гайда.");
+      toast.error("Ошибка при загрузке гайда.");
       console.error(err);
     } finally {
       setLoading(false);

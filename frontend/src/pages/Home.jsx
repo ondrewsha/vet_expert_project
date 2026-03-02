@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Book, FileText, Loader2, ShoppingCart } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { toast } from 'sonner';
 
 export default function Home() {
   const [guides, setGuides] = useState([]);
@@ -36,7 +37,7 @@ export default function Home() {
       window.location.assign(res.data.payment_url);
     } catch (error) {
       console.error("Ошибка при создании платежа:", error);
-      alert("Ошибка при создании платежа. Попробуйте позже.");
+      toast.error("Ошибка при создании платежа. Попробуйте позже.");
       setBuyingId(null);
     }
   };

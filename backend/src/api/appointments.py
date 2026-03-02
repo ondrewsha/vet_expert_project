@@ -3,7 +3,7 @@ from typing import List, Optional
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, update
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
@@ -13,7 +13,7 @@ from src.models import User, Appointment, DoctorProfile
 from src.schemas.schemas import AppointmentCreate, AppointmentResponse, DoctorResponse
 from src.core.security import get_current_user
 from src.services.yookassa_service import create_payment_url
-from src.services.yandex_calendar_service import get_busy_slots_yandex
+from src.services.yandex_calendar_service import get_busy_slots_yandex, delete_yandex_event, create_yandex_event
 from src.config import settings
 
 router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
@@ -181,10 +181,34 @@ async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depe
         )
         db.add(new_appt)
         await db.commit()
+
+        yandex_url = None
+        doc_prof = assigned_doctor.doctor_profile
+        
+        if doc_prof and doc_prof.yandex_email and doc_prof.yandex_password:
+            user_name = current_user.full_name or "Без имени"
+            user_phone = current_user.phone or ""
+            
+            yandex_url = create_yandex_event(
+                start_time=start_time_tz,
+                summary=f"🩺 Пациент: {appt_in.pet_info}",
+                description=f"Оплата с баланса.\nКлиент: {user_name}\nТелефон: {user_phone}",
+                email=doc_prof.yandex_email,
+                password=doc_prof.yandex_password
+            )
+            
+            # Если событие создалось, сохраняем ссылку в БД
+            if yandex_url:
+                await db.execute(
+                    update(Appointment)
+                    .where(Appointment.id == new_appt.id)
+                    .values(google_event_id=yandex_url)
+                )
+                await db.commit()
+                
         await redis_client.delete(redis_key)
         
         # --- УВЕДОМЛЕНИЯ ПРИ ОПЛАТЕ С БАЛАНСА ---
-        from src.services.telegram_service import send_telegram_message
         time_str = start_time_tz.strftime('%d.%m.%Y %H:%M')
         
         # 1. Суперадмину
@@ -220,7 +244,10 @@ async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depe
 @router.get("/me", response_model=List[AppointmentResponse])
 async def get_my_appointments(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(Appointment).where(Appointment.user_id == current_user.id).order_by(Appointment.start_time.desc())
+        select(Appointment)
+        .options(selectinload(Appointment.doctor))
+        .where(Appointment.user_id == current_user.id)
+        .order_by(Appointment.start_time.desc())
     )
     appts = result.scalars().all()
     
@@ -242,14 +269,23 @@ async def get_my_appointments(current_user: User = Depends(get_current_user), db
 
 @router.patch("/{appt_id}/refresh-link", response_model=AppointmentResponse)
 async def refresh_appointment_link(appt_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Умное обновление ссылки: если её нет, записываем из настроек"""
-    appt = await db.get(Appointment, appt_id)
+    # Подгружаем врача и его профиль
+    appt_query = await db.execute(
+        select(Appointment)
+        .options(selectinload(Appointment.doctor).selectinload(User.doctor_profile))
+        .where(Appointment.id == appt_id)
+    )
+    appt = appt_query.scalars().first()
+
     if not appt or appt.user_id != current_user.id:
         raise HTTPException(status_code=404)
         
-    if not appt.meet_link:
-        appt.meet_link = settings.YANDEX_TELEMOST_LINK
-        await db.commit()
+    # Берем ссылку ИЗ ПРОФИЛЯ ВРАЧА
+    doc_profile = appt.doctor.doctor_profile
+    new_link = doc_profile.telemost_link if doc_profile and doc_profile.telemost_link else settings.YANDEX_TELEMOST_LINK
+    
+    appt.meet_link = new_link
+    await db.commit()
         
     return appt
 
@@ -266,24 +302,37 @@ async def rate_appointment(appt_id: int, payload: RatingUpdate, current_user: Us
 
 @router.post("/{appt_id}/cancel")
 async def cancel_appointment(appt_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Отмена записи: меняем статус и возвращаем 1 консультацию на баланс"""
-    appt = await db.get(Appointment, appt_id)
+    # Подгружаем врача с профилем (нужны креды Яндекса)
+    appt_query = await db.execute(
+        select(Appointment)
+        .options(selectinload(Appointment.doctor).selectinload(User.doctor_profile))
+        .where(Appointment.id == appt_id)
+    )
+    appt = appt_query.scalars().first()
+
     if not appt or appt.user_id != current_user.id:
         raise HTTPException(status_code=404)
         
     if appt.status != "scheduled":
         raise HTTPException(status_code=400, detail="Можно отменить только активную запись")
         
-    # 1. Отменяем запись
+    # 1. Отменяем в БД
     appt.status = "canceled"
-    # 2. Начисляем на баланс
+    
+    # 2. Удаляем из Яндекса (если есть ссылка и креды)
+    if appt.google_event_id and appt.doctor.doctor_profile:
+        prof = appt.doctor.doctor_profile
+        if prof.yandex_email and prof.yandex_password:
+            delete_yandex_event(appt.google_event_id, prof.yandex_email, prof.yandex_password)
+
+    # 3. Возврат средств
     current_user.unused_consultations += 1
     await db.commit()
     
-    # 3. Уведомляем суперадмина
+    # 4. Уведомление
     moscow_tz = ZoneInfo("Europe/Moscow")
     dt = appt.start_time.astimezone(moscow_tz) if appt.start_time.tzinfo else appt.start_time
-    msg = f"⚠️ <b>Отмена записи!</b>\nКлиент отменил запись на {dt.strftime('%d.%m %H:%M')}.\nСредства возвращены на внутренний баланс клиента."
+    msg = f"⚠️ <b>Отмена записи!</b>\nКлиент отменил запись на {dt.strftime('%d.%m %H:%M')}.\nВрач: {appt.doctor.full_name}"
     await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg)
     
-    return {"status": "ok", "message": "Запись отменена, средства на балансе."}
+    return {"status": "ok", "message": "Запись отменена, средства вернулись на баланс."}

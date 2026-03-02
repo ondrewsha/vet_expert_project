@@ -41,7 +41,7 @@ def get_busy_slots_yandex(start_date: datetime, end_date: datetime, email: str, 
         busy_slots.append((dtstart, dtend))
     return busy_slots
 
-def create_yandex_event(start_time: datetime, summary: str, description: str, email: str, password: str):
+def create_yandex_event(start_time: datetime, summary: str, description: str, email: str, password: str) -> str | None:
     calendar = get_client(email, password)
     if not calendar:
         return None
@@ -50,7 +50,23 @@ def create_yandex_event(start_time: datetime, summary: str, description: str, em
         event = calendar.save_event(
             dtstart=start_time, dtend=end_time, summary=summary, description=description
         )
-        return event.url
+        # Возвращаем URL события, чтобы сохранить его в БД
+        return str(event.url) 
     except Exception as e:
         print(f"❌ Не удалось создать событие в Яндексе для {email}: {e}")
         return None
+
+def delete_yandex_event(event_url: str, email: str, password: str):
+    """Удаление события по его URL"""
+    if not event_url: return
+    
+    calendar = get_client(email, password)
+    if not calendar: return
+
+    try:
+        # caldav библиотека позволяет найти событие по URL и удалить
+        event = calendar.event_by_url(event_url)
+        event.delete()
+        print(f"✅ Событие удалено из Яндекса: {event_url}")
+    except Exception as e:
+        print(f"⚠️ Не удалось удалить событие из Яндекса (возможно, уже удалено): {e}")

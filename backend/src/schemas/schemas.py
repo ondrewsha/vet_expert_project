@@ -61,12 +61,21 @@ class AppointmentBase(BaseModel):
 class AppointmentCreate(AppointmentBase):
     doctor_id: Optional[int] = None
 
+class DoctorBasicInfo(BaseModel):
+    id: int
+    full_name: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
 class AppointmentResponse(AppointmentBase):
     id: int
     end_time: datetime
     status: str
     meet_link: Optional[str] = None
     rating: Optional[int] = None
+    google_event_id: Optional[str] = None
+    doctor: Optional[DoctorBasicInfo] = None
 
     class Config:
         from_attributes = True

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight, UserPlus, Stethoscope } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { toast } from 'sonner';
 
 export default function Consultation() {
   const { isAuthenticated, user } = useAuthStore();
@@ -84,17 +85,17 @@ export default function Consultation() {
       });
       
       if (!res.data.payment_url) {
-        alert("Запись успешно оформлена! Средства списаны с вашего баланса.");
+        toast.success("Запись успешно оформлена! Средства списаны с вашего баланса.");
         navigate('/profile');
       } else {
         window.location.assign(res.data.payment_url);
       }
     } catch (error) {
       if (error.response?.status === 409) {
-        alert("Извините, этот слот только что заняли. Выберите другое время.");
+        toast.error("Извините, этот слот только что заняли. Выберите другое время.");
         setSelectedDate({...selectedDate}); 
       } else {
-        alert("Ошибка при бронировании. Попробуйте позже.");
+        toast.error("Ошибка при бронировании. Попробуйте позже.");
       }
       setIsBooking(false);
     }
