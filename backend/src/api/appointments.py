@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from pydantic import BaseModel
 
+from src.services.telegram_service import send_telegram_message
 from src.database import get_db, redis_client
 from src.models import User, Appointment
 from src.schemas.schemas import AppointmentCreate, AppointmentResponse
@@ -83,7 +84,7 @@ async def get_available_slots(target_date: date, db: AsyncSession = Depends(get_
     return {"date": target_date, "available_slots": available_slots}
 
 @router.post("/book")
-async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depends(get_current_user)):
+async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     slot_time = appt_in.start_time.replace(tzinfo=None)
     redis_key = f"slot_lock:{slot_time.isoformat()}"
     
@@ -92,10 +93,47 @@ async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depe
         
     lock_data = f"{current_user.id}|{appt_in.pet_info or ''}"
     await redis_client.set(redis_key, lock_data, ex=900)
-    
+
+    # ВРЕМЕННО: Ищем тебя (суперадмина), чтобы привязать запись, пока мы не сделали выбор врачей
+    doctor_query = await db.execute(select(User).where(User.role.in_(["superadmin", "doctor"])))
+    default_doctor = doctor_query.scalars().first()
+    if not default_doctor:
+        raise HTTPException(status_code=500, detail="Нет доступных врачей в базе")
+
+    # СЦЕНАРИЙ 1: У КЛИЕНТА ЕСТЬ БАЛАНС (БЕЗ ЮКАССЫ)
+    if current_user.unused_consultations > 0:
+        current_user.unused_consultations -= 1 # Списываем баланс
+        
+        moscow_tz = ZoneInfo("Europe/Moscow")
+        start_time_tz = slot_time.replace(tzinfo=moscow_tz)
+        end_time = start_time_tz + timedelta(minutes=60)
+        
+        # Создаем запись сразу!
+        new_appt = Appointment(
+            user_id=current_user.id,
+            doctor_id=default_doctor.id,
+            start_time=start_time_tz,
+            end_time=end_time,
+            status="scheduled",
+            pet_info=appt_in.pet_info,
+            meet_link=settings.YANDEX_TELEMOST_LINK
+        )
+        db.add(new_appt)
+        await db.commit()
+        await redis_client.delete(redis_key) # Снимаем лок
+        
+        # Уведомляем
+        msg = f"💰 <b>Запись с баланса!</b>\n📅 {start_time_tz.strftime('%d.%m.%Y %H:%M')}\n🐶 {appt_in.pet_info}"
+        await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg)
+        
+        # Возвращаем payment_url: None, чтобы фронт понял, что платить не надо
+        return {"message": "Оплачено с баланса", "payment_url": None, "slot": slot_time}
+
+    # СЦЕНАРИЙ 2: НЕТ БАЛАНСА -> ИДЕМ В ЮКАССУ
     metadata = {
         "type": "appointment",
         "user_id": str(current_user.id),
+        "doctor_id": str(default_doctor.id), # <--- Передаем доктора в платежку
         "start_time": slot_time.isoformat(),
         "pet_info": appt_in.pet_info or "Не указано"
     }
@@ -155,3 +193,27 @@ async def rate_appointment(appt_id: int, payload: RatingUpdate, current_user: Us
     appt.rating = payload.rating
     await db.commit()
     return {"status": "ok"}
+
+@router.post("/{appt_id}/cancel")
+async def cancel_appointment(appt_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Отмена записи: меняем статус и возвращаем 1 консультацию на баланс"""
+    appt = await db.get(Appointment, appt_id)
+    if not appt or appt.user_id != current_user.id:
+        raise HTTPException(status_code=404)
+        
+    if appt.status != "scheduled":
+        raise HTTPException(status_code=400, detail="Можно отменить только активную запись")
+        
+    # 1. Отменяем запись
+    appt.status = "canceled"
+    # 2. Начисляем на баланс
+    current_user.unused_consultations += 1
+    await db.commit()
+    
+    # 3. Уведомляем суперадмина
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    dt = appt.start_time.astimezone(moscow_tz) if appt.start_time.tzinfo else appt.start_time
+    msg = f"⚠️ <b>Отмена записи!</b>\nКлиент отменил запись на {dt.strftime('%d.%m %H:%M')}.\nСредства возвращены на внутренний баланс клиента."
+    await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg)
+    
+    return {"status": "ok", "message": "Запись отменена, средства на балансе."}

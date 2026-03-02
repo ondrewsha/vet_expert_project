@@ -35,6 +35,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
             # Проверяем, за что была оплата (консультация или гайд)
             if metadata.get("type") == "appointment":
                 user_id = int(metadata.get("user_id"))
+                doctor_id = int(metadata.get("doctor_id"))
                 pet_info = metadata.get("pet_info")
                 
                 moscow_tz = ZoneInfo("Europe/Moscow")
@@ -45,6 +46,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 meet_link = settings.YANDEX_TELEMOST_LINK
                 new_appt = Appointment(
                     user_id=user_id,
+                    doctor_id=doctor_id,
                     start_time=start_time,
                     end_time=end_time,
                     status="scheduled",
@@ -76,7 +78,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                     f"🐶 Пациент: {pet_info}\n"
                     f"👤 Клиент: <b>{client_name}</b> (ID: {user_id})"
                 )
-                await send_telegram_message(settings.TG_DOCTOR_CHAT_ID, msg_text)
+                await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg_text)
                 print(f"✅ УСПЕШНАЯ ОПЛАТА! Врач уведомлен.")
             
             elif metadata.get("type") == "guide":
@@ -98,7 +100,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 
                 # Шлем уведомление врачу (чтобы он порадовался)
                 await send_telegram_message(
-                    settings.TG_DOCTOR_CHAT_ID, 
+                    settings.TG_SUPER_ADMIN_CHAT_ID, 
                     f"📚 <b>Куплен гайд!</b>\nПользователь {user_id} купил гайд #{guide_id}."
                 )
                 

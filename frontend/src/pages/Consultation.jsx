@@ -11,13 +11,13 @@ export default function Consultation() {
 
   const [selectedDate, setSelectedDate] = useState(defaultDate);
   const [slots, setSlots] = useState([]);
-  const[loadingSlots, setLoadingSlots] = useState(false);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [petInfo, setPetInfo] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
-  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const { isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
 
   // При изменении даты - запрашиваем свободные слоты у бэкенда
@@ -63,12 +63,18 @@ export default function Consultation() {
         start_time: selectedSlot,
         pet_info: petInfo
       });
-      // Перекидываем на ЮKassa
-      window.location.assign(res.data.payment_url);
+      
+      // ЕСЛИ ОПЛАТА С БАЛАНСА
+      if (!res.data.payment_url) {
+        alert("Запись успешно оформлена! Средства списаны с вашего баланса.");
+        navigate('/profile');
+      } else {
+        // Идем в ЮKassa
+        window.location.assign(res.data.payment_url);
+      }
     } catch (error) {
       if (error.response?.status === 409) {
         alert("Извините, этот слот только что заняли. Выберите другое время.");
-        // Обновляем слоты
         setSelectedDate({...selectedDate}); 
       } else {
         alert("Ошибка при бронировании. Попробуйте позже.");
@@ -187,7 +193,7 @@ export default function Consultation() {
                 <Loader2 className="w-6 h-6 animate-spin" />
               ) : (
                 <>
-                  Перейти к оплате
+                  {user?.unused_consultations > 0 ? "Оплатить с баланса" : "Перейти к оплате"}
                   <ArrowRight className="w-5 h-5" />
                 </>
               )}

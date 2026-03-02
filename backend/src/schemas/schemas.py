@@ -43,6 +43,7 @@ class UserResponse(BaseModel):
     telegram_id: Optional[int] = None
     full_name: Optional[str] = None
     role: str
+    unused_consultations: int
 
     class Config:
         from_attributes = True
@@ -50,6 +51,7 @@ class UserResponse(BaseModel):
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     telegram_id: Optional[int] = None
+    phone: Optional[str] = None
 
 # --- ЗАПИСИ НА КОНСУЛЬТАЦИЮ ---
 class AppointmentBase(BaseModel):

@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     YOOKASSA_SHOP_ID: str = ""
     YOOKASSA_SECRET_KEY: str = ""
     TG_BOT_TOKEN: str = ""
-    TG_DOCTOR_CHAT_ID: str = ""
+    TG_SUPER_ADMIN_CHAT_ID: str = ""
     YANDEX_EMAIL: str = ""
     YANDEX_PASSWORD: str = ""
     YANDEX_TELEMOST_LINK: str = ""
