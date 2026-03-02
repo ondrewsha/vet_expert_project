@@ -14,6 +14,14 @@ export default defineConfig({
       '/api': {
         target: 'http://backend:8000',
         changeOrigin: true,
+      },
+      '/admin': {
+        target: 'http://backend:8000',
+        changeOrigin: false,
+      },
+      '/statics': {
+        target: 'http://backend:8000',
+        changeOrigin: false,
       }
     }
   }

@@ -136,7 +136,30 @@ export default function Profile() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
-      <h1 className="text-3xl font-extrabold text-gray-900 mb-8">Личный кабинет</h1>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-extrabold text-gray-900">Личный кабинет</h1>
+        
+        {/* КНОПКА БЭК-ОФИСА (Только для врачей и админов) */}
+        {(user?.role === 'superadmin' || user?.role === 'doctor') && (
+          <button 
+            onClick={async () => {
+              // 1. Запрашиваем код (используем существующий эндпоинт авторизации)
+              try {
+                await apiClient.post('/auth/send-code', { phone: user.phone });
+                alert("Код для входа в Бэк-офис отправлен вам в Telegram!");
+                // 2. Открываем админку в новой вкладке
+                window.open(`${window.location.origin}/admin`, '_blank');
+              } catch (e) {
+                alert("Ошибка при запросе кода для админки.");
+                console.error("Ошибка при запросе кода для админки", e);
+              }
+            }}
+            className="bg-gray-900 text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-gray-800 transition"
+          >
+            Войти в Бэк-офис
+          </button>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
         
