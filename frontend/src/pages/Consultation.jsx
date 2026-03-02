@@ -1,31 +1,46 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight, UserPlus, Stethoscope } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
 export default function Consultation() {
+  const { isAuthenticated, user } = useAuthStore();
+  const navigate = useNavigate();
+
   const today = new Date();
   const offset = today.getTimezoneOffset() * 60000;
   const defaultDate = new Date(today.getTime() - offset).toISOString().split('T')[0];
 
+  // Стейты
+  const[doctors, setDoctors] = useState([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState(null); // null = "Не важно к кому"
+  
   const [selectedDate, setSelectedDate] = useState(defaultDate);
-  const [slots, setSlots] = useState([]);
+  const[slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const [petInfo, setPetInfo] = useState('');
+  const[petInfo, setPetInfo] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
-  const { isAuthenticated, user } = useAuthStore();
-  const navigate = useNavigate();
+  // 1. Загрузка списка врачей при монтировании компонента
+  useEffect(() => {
+    apiClient.get('/appointments/doctors')
+      .then(res => setDoctors(res.data))
+      .catch(err => console.error("Ошибка загрузки врачей", err));
+  },[]);
 
-  // При изменении даты - запрашиваем свободные слоты у бэкенда
+  // 2. Загрузка слотов при смене даты ИЛИ смене врача
   useEffect(() => {
     const fetchSlots = async () => {
       setLoadingSlots(true);
       try {
-        const res = await apiClient.get(`/appointments/available?target_date=${selectedDate}`);
+        let url = `/appointments/available?target_date=${selectedDate}`;
+        if (selectedDoctorId) {
+          url += `&doctor_id=${selectedDoctorId}`;
+        }
+        const res = await apiClient.get(url);
         setSlots(res.data.available_slots);
       } catch (err) {
         console.error("Ошибка загрузки слотов:", err);
@@ -35,21 +50,24 @@ export default function Consultation() {
     };
 
     fetchSlots();
-  }, [selectedDate]);
+  }, [selectedDate, selectedDoctorId]); // <--- Теперь слоты перезапрашиваются при выборе врача
 
-  // Функция для обработки смены даты
+  // Обработчики
   const handleDateChange = (e) => {
     setSelectedDate(e.target.value);
-    setSelectedSlot(null); // Сбрасываем слот здесь, а не в useEffect
+    setSelectedSlot(null);
   };
 
-  // Форматирование времени (из 2026-03-01T10:00:00 в 10:00)
+  const handleDoctorSelect = (docId) => {
+    setSelectedDoctorId(docId);
+    setSelectedSlot(null); // Сбрасываем выбранное время при смене врача
+  };
+
   const formatTime = (isoString) => {
     const date = new Date(isoString);
     return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Бронирование слота
   const handleBook = async () => {
     if (!isAuthenticated) {
       navigate('/login');
@@ -61,15 +79,14 @@ export default function Consultation() {
     try {
       const res = await apiClient.post('/appointments/book', {
         start_time: selectedSlot,
-        pet_info: petInfo
+        pet_info: petInfo,
+        doctor_id: selectedDoctorId // Передаем выбранного врача (или null)
       });
       
-      // ЕСЛИ ОПЛАТА С БАЛАНСА
       if (!res.data.payment_url) {
         alert("Запись успешно оформлена! Средства списаны с вашего баланса.");
         navigate('/profile');
       } else {
-        // Идем в ЮKassa
         window.location.assign(res.data.payment_url);
       }
     } catch (error) {
@@ -84,110 +101,176 @@ export default function Consultation() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
       
-      <div className="text-center mb-12">
+      <div className="text-center mb-10">
         <h1 className="text-3xl font-extrabold text-gray-900 sm:text-4xl">
           Онлайн-консультация
         </h1>
-        <p className="mt-4 text-lg text-gray-500">
-          Выберите удобное время для видеозвонка с ведущим терапевтом.
+        <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
+          Получите квалифицированную помощь ветеринара, не выходя из дома.
         </p>
       </div>
 
-      <div className="bg-white shadow-sm border border-gray-100 rounded-2xl overflow-hidden flex flex-col md:flex-row">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* ЛЕВАЯ ЧАСТЬ: Выбор даты и времени */}
-        <div className="p-8 md:w-1/2 border-b md:border-b-0 md:border-r border-gray-100 bg-gray-50/50">
-          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-            <CalendarIcon className="w-5 h-5 text-primary" />
-            Выберите дату
-          </h2>
+        {/* ЛЕВАЯ КОЛОНКА: Выбор врача и даты (Занимает 7 колонок) */}
+        <div className="lg:col-span-7 space-y-6">
           
-          <input 
-            type="date" 
-            min={new Date().toISOString().split('T')[0]} // Нельзя выбрать прошлое
-            value={selectedDate}
-            onChange={handleDateChange}
-            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition bg-white cursor-pointer"
-          />
+          {/* Блок выбора врача */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Stethoscope className="w-5 h-5 text-primary" />
+              Специалист
+            </h2>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Карточка "Любой врач" */}
+              <div 
+                onClick={() => handleDoctorSelect(null)}
+                className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center ${
+                  selectedDoctorId === null 
+                    ? 'border-primary bg-emerald-50' 
+                    : 'border-gray-100 hover:border-emerald-200 bg-white'
+                }`}
+              >
+                <div className={`p-3 rounded-full mb-3 ${selectedDoctorId === null ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
+                  <UserPlus className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-gray-900">Ближайшее время</h3>
+                <p className="text-xs text-gray-500 mt-1">Не важно, к кому</p>
+              </div>
 
-          <h2 className="text-xl font-bold text-gray-900 mt-10 mb-6 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-primary" />
-            Доступное время
-          </h2>
-
-          {loadingSlots ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          ) : slots.length === 0 ? (
-            <div className="text-gray-500 text-center py-8 bg-white rounded-xl border border-dashed border-gray-200">
-              На этот день нет свободного времени. Выберите другую дату.
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-3">
-              {slots.map((slot) => (
-                <button
-                  key={slot}
-                  onClick={() => setSelectedSlot(slot)}
-                  className={`py-2 rounded-lg font-medium transition-all ${
-                    selectedSlot === slot 
-                      ? 'bg-primary text-white shadow-md' 
-                      : 'bg-white border border-gray-200 text-gray-700 hover:border-primary hover:text-primary'
+              {/* Карточки конкретных врачей */}
+              {doctors.map(doc => (
+                <div 
+                  key={doc.id}
+                  onClick={() => handleDoctorSelect(doc.id)}
+                  className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex items-start gap-4 ${
+                    selectedDoctorId === doc.id 
+                      ? 'border-primary bg-emerald-50' 
+                      : 'border-gray-100 hover:border-emerald-200 bg-white'
                   }`}
                 >
-                  {formatTime(slot)}
-                </button>
+                  {doc.doctor_profile?.photo_url ? (
+                    <img src={doc.doctor_profile.photo_url} alt={doc.full_name} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-200" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-gray-200 flex shrink-0 items-center justify-center text-gray-400 font-bold text-xl">
+                      {doc.full_name ? doc.full_name[0] : 'В'}
+                    </div>
+                  )}
+                  
+                  <div>
+                    <h3 className="font-bold text-gray-900 leading-tight">{doc.full_name || 'Специалист'}</h3>
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                      {doc.doctor_profile?.description || 'Ветеринарный врач'}
+                    </p>
+                  </div>
+                </div>
               ))}
             </div>
-          )}
+          </div>
+
+          {/* Блок выбора даты и времени */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex flex-col sm:flex-row gap-6">
+              
+              {/* Дата */}
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  <CalendarIcon className="w-5 h-5 text-primary" />
+                  Дата
+                </h2>
+                <input 
+                  type="date" 
+                  min={new Date().toISOString().split('T')[0]} 
+                  value={selectedDate}
+                  onChange={handleDateChange}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition cursor-pointer"
+                />
+              </div>
+
+              {/* Время */}
+              <div className="flex-2">
+                <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-primary" />
+                  Время
+                </h2>
+                
+                {loadingSlots ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : slots.length === 0 ? (
+                  <div className="text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    Нет свободного времени.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {slots.map((slot) => (
+                      <button
+                        key={slot}
+                        onClick={() => setSelectedSlot(slot)}
+                        className={`py-2 px-1 rounded-lg text-sm font-medium transition-all ${
+                          selectedSlot === slot 
+                            ? 'bg-primary text-white shadow-md' 
+                            : 'bg-gray-50 border border-gray-200 text-gray-700 hover:border-primary hover:text-primary hover:bg-emerald-50'
+                        }`}
+                      >
+                        {formatTime(slot)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* ПРАВАЯ ЧАСТЬ: Данные питомца и оплата */}
-        <div className="p-8 md:w-1/2 bg-white flex flex-col">
+        {/* ПРАВАЯ КОЛОНКА: О питомце и Оплата (Занимает 5 колонок) */}
+        <div className="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col sticky top-24 h-fit">
           <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
             <Info className="w-5 h-5 text-primary" />
-            О питомце
+            Данные пациента
           </h2>
 
-          <div className="grow">
+          <div className="grow mb-6">
             {selectedSlot ? (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
                 <div className="bg-emerald-50 text-emerald-800 p-4 rounded-xl text-sm border border-emerald-100">
-                  Выбрано время: <b>{new Date(selectedDate).toLocaleDateString('ru-RU')} в {formatTime(selectedSlot)}</b>
+                  Запись на: <b>{new Date(selectedDate).toLocaleDateString('ru-RU')} в {formatTime(selectedSlot)}</b>
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Кратко опишите проблему, возраст и породу
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Что беспокоит питомца? (Порода, возраст, симптомы)
                   </label>
                   <textarea
-                    rows="5"
+                    rows="6"
                     value={petInfo}
                     onChange={(e) => setPetInfo(e.target.value)}
-                    placeholder="Например: Кот Мурзик, 5 лет. Третий день отказывается от еды..."
+                    placeholder="Например: Собака корги, 3 года. Второй день чешет ухо и трясет головой..."
                     className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none"
                   ></textarea>
                 </div>
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-gray-400 text-center px-6">
-                Сначала выберите время слева, чтобы заполнить данные о питомце
+              <div className="h-48 flex items-center justify-center text-gray-400 text-center px-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                Сначала выберите специалиста и время приема
               </div>
             )}
           </div>
 
-          <div className="mt-8 pt-6 border-t border-gray-100">
-            <div className="flex justify-between items-center mb-6">
-              <span className="text-gray-600 font-medium">Стоимость приема:</span>
-              <span className="text-2xl font-extrabold text-gray-900">2 000 ₽</span>
+          <div className="pt-6 border-t border-gray-100 mt-auto">
+            <div className="flex justify-between items-end mb-4">
+              <span className="text-gray-500 font-medium">К оплате:</span>
+              <span className="text-3xl font-black text-gray-900 tracking-tight">2 000 ₽</span>
             </div>
             
             <button
               onClick={handleBook}
               disabled={!selectedSlot || isBooking}
-              className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
             >
               {isBooking ? (
                 <Loader2 className="w-6 h-6 animate-spin" />
@@ -199,13 +282,12 @@ export default function Consultation() {
               )}
             </button>
             <p className="text-xs text-gray-400 text-center mt-3">
-              Безопасная оплата картой или СБП. Слот бронируется на 15 минут.
+              Время бронируется на 15 минут. Вы будете перенаправлены на защищенную страницу оплаты.
             </p>
           </div>
-
         </div>
-      </div>
 
+      </div>
     </div>
   );
 }
