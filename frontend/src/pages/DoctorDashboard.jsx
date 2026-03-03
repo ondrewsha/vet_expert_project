@@ -26,6 +26,7 @@ export default function DoctorDashboard() {
   // Для отображения уже загруженных файлов при редактировании
   const [existingCoverUrl, setExistingCoverUrl] = useState(null);
   const [existingPdf, setExistingPdf] = useState(false);
+  const [existingPdfName, setExistingPdfName] = useState(null);
   
   const [loadingGuide, setLoadingGuide] = useState(false);
 
@@ -241,6 +242,7 @@ export default function DoctorDashboard() {
       // Подтягиваем инфу о существующих файлах
       setExistingCoverUrl(guide.cover_image_id ? `/api/guides/${guide.id}/cover` : null);
       setExistingPdf(!!guide.mongo_file_id);
+      setExistingPdfName(guide.pdf_filename || null);
   };
 
   const cancelEditing = () => {
@@ -474,6 +476,7 @@ export default function DoctorDashboard() {
                                 ) : existingPdf ? (
                                     <div className="flex flex-col items-center p-2 text-center z-10">
                                         <CheckCircle className="w-6 h-6 mb-1 text-primary" />
+                                        <p className="text-xs font-bold text-emerald-800 line-clamp-1 w-full px-2">{existingPdfName}</p>
                                         <p className="text-xs font-bold text-emerald-800">PDF загружен</p>
                                         <p className="text-[10px] text-emerald-600 mt-1">Нажмите для замены</p>
                                     </div>

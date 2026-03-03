@@ -11,6 +11,7 @@ import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import DoctorDashboard from './pages/DoctorDashboard';
 import GuideDetails from './pages/GuideDetails';
+import AdminDashboard from './pages/AdminDashboard';
 
 // Компонент-обертка для защиты приватных роутов
 const ProtectedRoute = ({ children }) => {
@@ -51,6 +52,7 @@ function App() {
             <Route path="/guides/:id" element={<GuideDetails />} />
             <Route path="/doctor" element={<ProtectedRoute><DoctorDashboard /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/super-panel" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           </Routes>
         </main>
       </div>

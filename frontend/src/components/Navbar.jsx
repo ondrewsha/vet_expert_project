@@ -35,6 +35,11 @@ export default function Navbar() {
                 Панель специалиста
               </Link>
             )}
+            {(user?.role === 'superadmin') && (
+              <Link to="/super-panel" className="bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-200 transition text-sm font-bold flex items-center gap-2">
+                Админ Панель
+              </Link>
+            )}
           </div>
 
           {/* Профиль / Вход (Справа) */}

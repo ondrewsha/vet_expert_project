@@ -47,6 +47,7 @@ class GuideResponse(GuideBase):
     created_at: datetime
     cover_image_id: Optional[str] = None
     mongo_file_id: Optional[str] = None
+    pdf_filename: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -66,9 +67,7 @@ class DoctorProfileResponse(BaseModel):
     description: Optional[str] = None
     photo_url: Optional[str] = None
     work_days: Optional[str] = None
-    start_hour: Optional[int] = None
-    end_hour: Optional[int] = None
-    slot_duration: Optional[int] = None
+    is_active: bool = True
 
     class Config:
         from_attributes = True

@@ -104,7 +104,8 @@ async def create_guide(
     
     new_guide = Guide(
         title=title, description=description, free_snippet=free_snippet,
-        price=price, mongo_file_id=str(file_id), author_id=current_user.id, cover_image_id=cover_id
+        price=price, mongo_file_id=str(file_id), pdf_filename=file.filename,
+        author_id=current_user.id, cover_image_id=cover_id
     )
     db.add(new_guide)
     await db.commit()
@@ -242,6 +243,7 @@ async def update_guide(
     if file:
         file_id = await fs.upload_from_stream(filename=file.filename, source=file.file, metadata={"content_type": file.content_type})
         guide.mongo_file_id = str(file_id)
+        guide.pdf_filename = file.filename
         # (По-хорошему тут надо удалить старый файл из MongoDB, но для простоты пока оставим как историю)
 
     # Если загрузили новую обложку

@@ -7,6 +7,7 @@ from src.api.users import router as users_router
 from src.api.appointments import router as appointments_router
 from src.api.payments import router as payments_router
 from src.api.telegram import router as tg_router
+from src.api.superadmin import router as superadmin_router
 from src.admin import setup_admin
 
 # Инициализация приложения
@@ -31,6 +32,7 @@ app.include_router(users_router)
 app.include_router(appointments_router)
 app.include_router(payments_router)
 app.include_router(tg_router)
+app.include_router(superadmin_router)
 
 setup_admin(app)
 

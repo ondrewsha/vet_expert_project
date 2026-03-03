@@ -57,6 +57,7 @@ class Guide(Base):
     free_snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # Бесплатный фрагмент
     price: Mapped[float] = mapped_column(Numeric(10, 2))
     mongo_file_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pdf_filename: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     cover_image_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
