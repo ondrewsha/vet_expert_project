@@ -47,6 +47,8 @@ export default function DoctorDashboard() {
   const [workDays, setWorkDays] = useState([0, 1, 2, 3, 4, 5, 6]); 
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [myDesc, setMyDesc] = useState('');
+  const [myPhoto, setMyPhoto] = useState(null);
 
   // --- ЭФФЕКТЫ ---
   useEffect(() => {
@@ -85,6 +87,7 @@ export default function DoctorDashboard() {
               const docProfile = res.data.doctor_profile;
               if (docProfile && docProfile.work_days) {
                   setWorkDays(docProfile.work_days.split(',').map(Number));
+                  setMyDesc(docProfile.description || '');
               }
             } catch (e) {
               toast.error("Ошибка загрузки настроек");
@@ -217,11 +220,15 @@ export default function DoctorDashboard() {
 
   const handleSaveSettings = async () => {
       setSavingSettings(true);
+      const formData = new FormData();
+      formData.append('work_days', workDays.join(','));
+      if (myDesc) formData.append('description', myDesc);
+      if (myPhoto) formData.append('file', myPhoto); // <--- ФОТО
+
       try {
-          await apiClient.patch('/users/doctor/settings', {
-              work_days: workDays.join(',')
-          });
+          await apiClient.patch('/users/doctor/settings', formData);
           toast.success("Настройки сохранены!");
+          setMyPhoto(null); // Сброс файла
       } catch (e) {
           toast.error("Ошибка сохранения настроек");
           console.error("Ошибка сохранения настроек", e);
@@ -302,7 +309,7 @@ export default function DoctorDashboard() {
           <Calendar className="w-4 h-4"/> Расписание (Блокировки)
         </button>
         <button onClick={() => setActiveTab('settings')} className={`px-5 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'settings' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
-          <Settings className="w-4 h-4"/> Настройки графика
+          <Settings className="w-4 h-4"/> Настройки профиля
         </button>
         <button onClick={() => setActiveTab('guides')} className={`px-5 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'guides' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
           <BookOpen className="w-4 h-4"/> Управление гайдами
@@ -352,14 +359,28 @@ export default function DoctorDashboard() {
 
       {/* --- ВКЛАДКА 2: НАСТРОЙКИ --- */}
       {activeTab === 'settings' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 animate-in fade-in max-w-2xl">
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Настройки графика работы</h2>
-            <p className="text-sm text-gray-500 mb-8">Выберите дни недели, по которым вы принимаете пациентов. В остальные дни ваша карточка не будет отображаться на странице записи.</p>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 animate-in fade-in">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Настройки профиля и графика</h2>
             
             {loadingSettings ? (
                 <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
             ) : (
                 <div className="space-y-8">
+                    {/* РЕДАКТИРОВАНИЕ ПРОФИЛЯ */}
+                    <div>
+                        <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider">Мой профиль</h3>
+                        <textarea rows="3" value={myDesc} onChange={e => setMyDesc(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none mb-3" placeholder="Расскажите о себе пациентам..." />
+                        
+                        <label className="flex items-center gap-3 cursor-pointer bg-gray-50 border border-gray-200 p-3 rounded-xl hover:bg-gray-100 transition w-fit">
+                            <ImageIcon className="w-5 h-5 text-gray-500" />
+                            <span className="text-sm text-gray-700 font-medium">{myPhoto ? myPhoto.name : "Загрузить новое фото"}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={e => setMyPhoto(e.target.files[0])} />
+                        </label>
+                    </div>
+
+                    <hr className="border-gray-100" />
+
+                    {/* ГРАФИК РАБОТЫ */}
                     <div>
                         <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider">Рабочие дни</h3>
                         <div className="flex flex-wrap gap-3">
@@ -390,7 +411,7 @@ export default function DoctorDashboard() {
 
                     <button onClick={handleSaveSettings} disabled={savingSettings} className="bg-gray-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-gray-800 transition flex items-center gap-2 disabled:opacity-50">
                         {savingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                        Сохранить график
+                        Сохранить все
                     </button>
                 </div>
             )}

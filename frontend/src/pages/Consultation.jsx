@@ -146,7 +146,7 @@ export default function Consultation() {
                   {/* Карточка "Любой врач" */}
                   <div 
                     onClick={() => handleDoctorSelect(null)}
-                    className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center ${
+                    className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center col-span-2 ${
                       selectedDoctorId === null 
                         ? 'border-primary bg-emerald-50' 
                         : 'border-gray-100 hover:border-emerald-200 bg-white'
@@ -171,7 +171,7 @@ export default function Consultation() {
                       }`}
                     >
                       {doc.doctor_profile?.photo_url ? (
-                        <img src={doc.doctor_profile.photo_url} alt={doc.full_name} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-200" />
+                        <img src={doc.doctor_profile.photo_url ? `/api/users/${doc.id}/photo` : null} alt={doc.full_name} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-200" />
                       ) : (
                         <div className="w-14 h-14 rounded-full bg-gray-200 flex shrink-0 items-center justify-center text-gray-400 font-bold text-xl">
                           {doc.full_name ? doc.full_name[0].toUpperCase() : 'В'}

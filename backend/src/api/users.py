@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List
 import random
 from pydantic import BaseModel
+from bson import ObjectId
 
-from src.database import get_db, redis_client
+from src.database import get_db, redis_client, fs
 from src.models import User, Purchase, Guide, Appointment, DoctorProfile
 from src.schemas.schemas import UserResponse, UserUpdate, GuideResponse
 from src.core.security import get_current_user
@@ -52,7 +54,9 @@ async def get_my_guides(current_user: User = Depends(get_current_user), db: Asyn
 
 @router.patch("/doctor/settings")
 async def update_doctor_settings(
-    settings: DoctorSettingsUpdate, 
+    work_days: str = Form(None), # "0,1,2"
+    description: str = Form(None),
+    file: UploadFile = File(None), # Аватарка
     current_user: User = Depends(get_current_user), 
     db: AsyncSession = Depends(get_db)
 ):
@@ -63,11 +67,20 @@ async def update_doctor_settings(
     prof = res.scalars().first()
     
     if not prof:
-        # Если профиля еще нет (хотя суперадмину мы его создавали), создаем
-        prof = DoctorProfile(user_id=current_user.id, work_days=settings.work_days)
+        prof = DoctorProfile(user_id=current_user.id)
         db.add(prof)
-    else:
-        prof.work_days = settings.work_days
+    
+    if work_days is not None: prof.work_days = work_days
+    if description is not None: prof.description = description
+    
+    if file:
+        # Загружаем фото в Mongo
+        file_id = await fs.upload_from_stream(
+            filename=file.filename, 
+            source=file.file, 
+            metadata={"content_type": file.content_type}
+        )
+        prof.photo_url = str(file_id)
         
     await db.commit()
     return {"status": "ok"}
@@ -129,3 +142,19 @@ async def verify_phone_change(req: PhoneChangeVerify, current_user: User = Depen
     await redis_client.delete(f"phone_change:{current_user.id}")
     
     return {"status": "ok"}
+
+@router.get("/{user_id}/photo")
+async def get_doctor_photo(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Получить аватарку врача"""
+    res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == user_id))
+    prof = res.scalars().first()
+    
+    if not prof or not prof.photo_url:
+        # Если фото нет, возвращаем 404 (фронт покажет заглушку)
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+
+    try:
+        grid_out = await fs.open_download_stream(ObjectId(prof.photo_url))
+        return StreamingResponse(grid_out, media_type="image/jpeg")
+    except Exception:
+        raise HTTPException(status_code=404, detail="Файл не найден")

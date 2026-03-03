@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import { Users, DollarSign, Activity, UserPlus, Power, Loader2, CheckCircle, RefreshCcw } from 'lucide-react';
+import { Users, DollarSign, Activity, UserPlus, Power, Loader2, CheckCircle, RefreshCcw, Image as ImageIcon, Edit, X } from 'lucide-react';
 import { formatPhone } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -11,17 +11,19 @@ export default function AdminDashboard() {
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Добавление врача
-  const [newDocPhone, setNewDocPhone] = useState('');
-  const [newDocName, setNewDocName] = useState('');
-  const [newDocDesc, setNewDocDesc] = useState('');
-  const [newDocYandex, setNewDocYandex] = useState('');
-  const [newDocPass, setNewDocPass] = useState('');
-  const [addingDoc, setAddingDoc] = useState(false);
+  // Состояния Формы
+  const [editingId, setEditingId] = useState(null); // Если null - режим создания
+  const [phone, setPhone] = useState('');
+  const [name, setName] = useState('');
+  const [desc, setDesc] = useState('');
+  const [yandexEmail, setYandexEmail] = useState('');
+  const [yandexPass, setYandexPass] = useState('');
+  const [link, setLink] = useState('');
+  const [file, setFile] = useState(null); // Фото
+  
+  const [processing, setProcessing] = useState(false);
 
-  const worksDaysMap = {
-    0: 'Пн', 1: 'Вт', 2: 'Ср', 3: 'Чт', 4: 'Пт', 5: 'Сб', 6: 'Вс'
-  };
+  const worksDaysMap = {0: 'Пн', 1: 'Вт', 2: 'Ср', 3: 'Чт', 4: 'Пт', 5: 'Сб', 6: 'Вс'};
 
   const fetchData = () => {
     Promise.all([
@@ -30,39 +32,63 @@ export default function AdminDashboard() {
     ]).then(([statsRes, docRes]) => {
       setStats(statsRes.data);
       setDoctors(docRes.data);
-    }).catch(() => toast.error("Ошибка загрузки данных"))
+    }).catch(() => toast.error("Ошибка загрузки"))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    if (user?.role !== 'superadmin') return;
-    fetchData();
+    if (user?.role === 'superadmin') fetchData();
   }, [user]);
 
   if (user?.role !== 'superadmin') return <div className="p-10 text-center text-red-500">Доступ запрещен</div>;
   if (loading) return <div className="flex justify-center p-20"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>;
 
-  const handleAddDoctor = async (e) => {
+  // Заполнить форму для редактирования
+  const startEdit = (doc) => {
+    setEditingId(doc.id);
+    setName(doc.full_name || '');
+    setPhone(doc.phone || '');
+    setDesc(doc.doctor_profile?.description || '');
+    setYandexEmail(doc.doctor_profile?.yandex_email || '');
+    setYandexPass(doc.doctor_profile?.yandex_password || ''); // Пароль лучше не светить, но для удобства оставим
+    setLink(doc.doctor_profile?.telemost_link || '');
+    setFile(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setName(''); setPhone(''); setDesc(''); setYandexEmail(''); setYandexPass(''); setLink(''); setFile(null);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setAddingDoc(true);
+    setProcessing(true);
+    
+    const formData = new FormData();
+    formData.append('phone', phone.replace(/[^\d+]/g, ''));
+    formData.append('full_name', name);
+    if (desc) formData.append('description', desc);
+    if (yandexEmail) formData.append('yandex_email', yandexEmail);
+    if (yandexPass) formData.append('yandex_password', yandexPass);
+    if (link) formData.append('telemost_link', link);
+    if (file) formData.append('file', file);
+
     try {
-        await apiClient.post('/superadmin/doctors', { 
-            phone: newDocPhone.replace(/[^\d+]/g, ''), 
-            full_name: newDocName,
-            description: newDocDesc,
-            yandex_email: newDocYandex,
-            yandex_password: newDocPass
-        });
-        toast.success("Врач добавлен!");
-        // Очистка
-        setNewDocPhone(''); setNewDocName(''); setNewDocDesc(''); setNewDocYandex(''); setNewDocPass('');
-        // Обновляем список
+        if (editingId) {
+            await apiClient.patch(`/superadmin/doctors/${editingId}`, formData);
+            toast.success("Врач обновлен");
+        } else {
+            await apiClient.post('/superadmin/doctors', formData);
+            toast.success("Врач создан");
+        }
+        cancelEdit();
         fetchData();
     } catch (e) {
-        toast.error("Ошибка добавления врача");
+        toast.error("Ошибка сохранения");
         console.error(e);
     } finally {
-        setAddingDoc(false);
+        setProcessing(false);
     }
   };
 
@@ -80,10 +106,8 @@ export default function AdminDashboard() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-extrabold text-gray-900">Административная панель</h1>
-        <button onClick={fetchData} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition">
-            <RefreshCcw className="w-5 h-5 text-gray-600" />
-        </button>
+        <h1 className="text-3xl font-extrabold text-gray-900">Админ Панель</h1>
+        <button onClick={fetchData} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition"><RefreshCcw className="w-5 h-5 text-gray-600" /></button>
       </div>
 
       {/* СТАТИСТИКА */}
@@ -101,35 +125,34 @@ export default function AdminDashboard() {
             <h2 className="text-xl font-bold mb-6">Управление врачами</h2>
             <div className="space-y-4">
                 {doctors.map(doc => (
-                    <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-gray-300 transition gap-4">
+                    <div key={doc.id} className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-xl transition gap-4 ${editingId === doc.id ? 'border-primary bg-emerald-50' : 'border-gray-100 hover:border-gray-300'}`}>
                         <div className="flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${doc.doctor_profile?.is_active !== false ? 'bg-emerald-500' : 'bg-gray-400'}`}>
-                                {doc.full_name?.[0] || "D"}
-                            </div>
+                            {doc.doctor_profile?.photo_url ? (
+                                <img src={`/api/users/${doc.id}/photo`} className="w-12 h-12 rounded-full object-cover border border-gray-200" />
+                            ) : (
+                                <div className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white bg-gray-400">
+                                    {doc.full_name?.[0]}
+                                </div>
+                            )}
                             <div>
                                 <div className="font-bold text-gray-900">{doc.full_name}</div>
-                                
-                                <div className="text-xs text-gray-400">
-                                    {doc.doctor_profile?.work_days 
-                                        ? doc.doctor_profile.work_days.split(',').map(day => worksDaysMap[day]).join(', ')
-                                        : "График не настроен"}
+                                <div className="text-xs text-gray-400 mt-1">
+                                    {doc.doctor_profile?.work_days ? doc.doctor_profile.work_days.split(',').map(d => worksDaysMap[d]).join(', ') : "График не настроен"}
                                 </div>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                             <div className="text-xs text-gray-400 hidden sm:block truncate max-w-37.5">
                                 {doc.doctor_profile?.description || "Нет описания"}
                             </div>
-                            <button 
-                                onClick={() => toggleDoctor(doc.id)}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                                    doc.doctor_profile?.is_active !== false 
-                                    ? 'bg-red-50 text-red-600 hover:bg-red-100' 
-                                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                                }`}
-                            >
+                            <button onClick={() => startEdit(doc)} className="p-2 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"><Edit className="w-4 h-4" /></button>
+                            <button onClick={() => toggleDoctor(doc.id)} className={`flex items-center gap-1 px-2 py-1 rounded-lg font-medium transition-colors ${
+                                    doc.doctor_profile?.is_active 
+                                    ? 'text-red-600 bg-red-50 hover:bg-red-100' 
+                                    : 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                                }`}>
                                 <Power className="w-4 h-4" />
-                                {doc.doctor_profile?.is_active !== false ? 'Отключить' : 'Включить'}
+                                <span>{doc.doctor_profile?.is_active ? "Откл" : "Вкл"}</span>
                             </button>
                         </div>
                     </div>
@@ -137,37 +160,43 @@ export default function AdminDashboard() {
             </div>
         </div>
 
-        {/* ДОБАВИТЬ ВРАЧА */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 h-fit">
+        {/* ФОРМА (СОЗДАНИЕ / РЕДАКТИРОВАНИЕ) */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 h-fit relative">
+            {editingId && (
+                <button onClick={cancelEdit} className="absolute top-4 right-4 text-gray-400 hover:text-red-500"><X className="w-5 h-5"/></button>
+            )}
+            
             <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                <UserPlus className="w-5 h-5" /> Добавить врача
+                <UserPlus className="w-5 h-5" /> {editingId ? "Редактирование" : "Добавить врача"}
             </h2>
-            <form onSubmit={handleAddDoctor} className="space-y-4">
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">ФИО</label>
-                    <input required type="text" value={newDocName} onChange={e => setNewDocName(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="Иванов Иван" />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
-                    <input required type="tel" value={formatPhone(newDocPhone)} onChange={e => setNewDocPhone(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="+7..." />
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Основное</label>
+                    <input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary mb-3" placeholder="ФИО" />
+                    <input required type="tel" value={formatPhone(phone)} onChange={e => setPhone(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="Телефон" />
                 </div>
                 
-                {/* Новые поля */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Описание (Опционально)</label>
-                    <textarea rows="2" value={newDocDesc} onChange={e => setNewDocDesc(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary resize-none" placeholder="Специализация, стаж..." />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Яндекс Почта (Для календаря)</label>
-                    <input type="email" value={newDocYandex} onChange={e => setNewDocYandex(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="doctor@yandex.ru" />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Пароль приложений Яндекса</label>
-                    <input type="password" value={newDocPass} onChange={e => setNewDocPass(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="Вставьте токен" />
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Профиль</label>
+                    <textarea rows="2" value={desc} onChange={e => setDesc(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary resize-none mb-3" placeholder="Описание, регалии..." />
+                    <input type="text" value={link} onChange={e => setLink(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary mb-3" placeholder="Ссылка на Телемост" />
+                    
+                    <label className="flex items-center gap-2 cursor-pointer bg-gray-50 border border-gray-200 p-2 rounded-xl hover:bg-gray-100">
+                        <ImageIcon className="w-5 h-5 text-gray-400" />
+                        <span className="text-sm text-gray-600 truncate">{file ? file.name : "Загрузить фото"}</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={e => setFile(e.target.files[0])} />
+                    </label>
                 </div>
 
-                <button disabled={addingDoc} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition flex justify-center mt-4">
-                    {addingDoc ? <Loader2 className="animate-spin"/> : "Добавить и сохранить"}
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Интеграция Яндекс</label>
+                    <input type="email" value={yandexEmail} onChange={e => setYandexEmail(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary mb-3" placeholder="email@yandex.ru" />
+                    <input type="password" value={yandexPass} onChange={e => setYandexPass(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="Пароль приложений" />
+                </div>
+
+                <button disabled={processing} className={`w-full text-white py-3 rounded-xl font-bold transition flex justify-center mt-4 ${editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-900 hover:bg-gray-800'}`}>
+                    {processing ? <Loader2 className="animate-spin"/> : (editingId ? "Сохранить" : "Добавить")}
                 </button>
             </form>
         </div>
