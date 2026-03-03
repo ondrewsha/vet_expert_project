@@ -42,6 +42,9 @@ class DoctorProfile(Base):
     yandex_password: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     telemost_link: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True) # Активен ли врач
+    work_days: Mapped[str] = mapped_column(String, default="0,1,2,3,4,5,6") # 0-Пн, 6-Вс
+
     user: Mapped["User"] = relationship(back_populates="doctor_profile")
 
 class Guide(Base):
@@ -53,7 +56,8 @@ class Guide(Base):
     description: Mapped[str] = mapped_column(Text) # Обязательное описание
     free_snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # Бесплатный фрагмент
     price: Mapped[float] = mapped_column(Numeric(10, 2))
-    mongo_file_id: Mapped[Optional[str]] = mapped_column(String, nullable=True) 
+    mongo_file_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    cover_image_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

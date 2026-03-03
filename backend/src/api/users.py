@@ -1,19 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List
 import random
 from pydantic import BaseModel
 
 from src.database import get_db, redis_client
-from src.models import User, Purchase, Guide, Appointment
+from src.models import User, Purchase, Guide, Appointment, DoctorProfile
 from src.schemas.schemas import UserResponse, UserUpdate, GuideResponse
 from src.core.security import get_current_user
 from src.services.telegram_service import send_telegram_message
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
-# Схемы для смены телефона
 class PhoneChangeRequest(BaseModel):
     new_phone: str
 
@@ -21,9 +21,13 @@ class PhoneChangeVerify(BaseModel):
     new_phone: str
     code: str
 
+class DoctorSettingsUpdate(BaseModel):
+    work_days: str # "0,1,2,3,4"
+
 @router.get("/me", response_model=UserResponse)
-async def read_users_me(current_user: User = Depends(get_current_user)):
-    return current_user
+async def read_users_me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.id == current_user.id))
+    return res.scalars().first()
 
 @router.patch("/me", response_model=UserResponse)
 async def update_users_me(
@@ -45,6 +49,28 @@ async def get_my_guides(current_user: User = Depends(get_current_user), db: Asyn
         .where(Purchase.user_id == current_user.id, Purchase.status == "succeeded")
     )
     return result.scalars().all()
+
+@router.patch("/doctor/settings")
+async def update_doctor_settings(
+    settings: DoctorSettingsUpdate, 
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    if current_user.role not in ["doctor", "superadmin"]:
+        raise HTTPException(status_code=403)
+        
+    res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == current_user.id))
+    prof = res.scalars().first()
+    
+    if not prof:
+        # Если профиля еще нет (хотя суперадмину мы его создавали), создаем
+        prof = DoctorProfile(user_id=current_user.id, work_days=settings.work_days)
+        db.add(prof)
+    else:
+        prof.work_days = settings.work_days
+        
+    await db.commit()
+    return {"status": "ok"}
 
 # --- НОВАЯ ЛОГИКА СМЕНЫ ТЕЛЕФОНА ---
 

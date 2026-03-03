@@ -45,7 +45,7 @@ def create_yandex_event(start_time: datetime, summary: str, description: str, em
     calendar = get_client(email, password)
     if not calendar:
         return None
-    end_time = start_time + timedelta(hours=1)
+    end_time = start_time + timedelta(minutes=30)
     try:
         event = calendar.save_event(
             dtstart=start_time, dtend=end_time, summary=summary, description=description

@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
 
 WORK_START_HOUR = 10
 WORK_END_HOUR = 18
-CONSULTATION_DURATION_MINUTES = 60
+CONSULTATION_DURATION_MINUTES = 30
 
 class RatingUpdate(BaseModel):
     rating: int
@@ -29,13 +29,43 @@ class BlockSlotRequest(BaseModel):
     start_time: datetime
     duration_minutes: int = 60
 
+class DoctorDayScheduleResponse(BaseModel):
+    time: str
+    state: str # "free", "booked", "blocked", "yandex"
+    appt_id: Optional[int] = None
+
+class ManageBlocksRequest(BaseModel):
+    date: date
+    to_block: List[str] # ["10:00", "11:00"]
+    to_unblock: List[str]
+
 @router.get("/doctors", response_model=List[DoctorResponse])
-async def get_doctors(db: AsyncSession = Depends(get_db)):
-    """Получить список всех врачей для отображения на странице записи"""
+async def get_doctors(target_date: date, db: AsyncSession = Depends(get_db)):
+    """Получить список врачей, которые РАБОТАЮТ в указанный день"""
+    
+    # 0 = Понедельник, 6 = Воскресенье (в Python так работает .weekday())
+    day_index = str(target_date.weekday()) 
+
     result = await db.execute(
-        select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"]))
+        select(User)
+        .options(selectinload(User.doctor_profile))
+        .where(User.role.in_(["doctor", "superadmin"]))
     )
-    return result.scalars().all()
+    all_doctors = result.scalars().all()
+    
+    # Фильтруем: оставляем только тех, у кого day_index есть в work_days, и кто is_active
+    working_doctors =[]
+    for doc in all_doctors:
+        prof = doc.doctor_profile
+        # Если профиля нет или is_active False - пропускаем
+        if not prof or not prof.is_active: 
+            continue
+            
+        # Проверяем рабочие дни ("0,1,2,3,4,5,6")
+        if prof.work_days and day_index in prof.work_days.split(','):
+            working_doctors.append(doc)
+            
+    return working_doctors
 
 @router.get("/available")
 async def get_available_slots(target_date: date, doctor_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
@@ -46,7 +76,7 @@ async def get_available_slots(target_date: date, doctor_id: Optional[int] = None
     now = datetime.now(moscow_tz).replace(tzinfo=None) 
     
     while current_time < end_time:
-        if target_date == now.date() and current_time <= now + timedelta(minutes=15):
+        if target_date == now.date() and current_time <= now + timedelta(minutes=10):
             current_time += timedelta(minutes=CONSULTATION_DURATION_MINUTES)
             continue
         all_slots.append(current_time)
@@ -94,7 +124,7 @@ async def get_available_slots(target_date: date, doctor_id: Optional[int] = None
     # 3. Проверяем слоты. Слот доступен, если ХОТЯ БЫ ОДИН запрошенный врач свободен
     available_slots =[]
     for slot in all_slots:
-        slot_end = slot + timedelta(minutes=60)
+        slot_end = slot + timedelta(minutes=30)
         is_slot_available = False
 
         for doc in doctors:
@@ -178,7 +208,7 @@ async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depe
             user_id=current_user.id,
             doctor_id=assigned_doctor.id,
             start_time=start_time_tz,
-            end_time=start_time_tz + timedelta(minutes=60),
+            end_time=start_time_tz + timedelta(minutes=30),
             status="scheduled",
             pet_info=appt_in.pet_info,
             meet_link=meet_link
@@ -341,57 +371,136 @@ async def cancel_appointment(appt_id: int, current_user: User = Depends(get_curr
     
     return {"status": "ok", "message": "Запись отменена, средства вернулись на баланс."}
 
-@router.post("/block-slot")
-async def block_slot(
-    req: BlockSlotRequest, 
-    current_user: User = Depends(get_current_user), 
-    db: AsyncSession = Depends(get_db)
-):
-    """Врач блокирует слот (создает техническую запись)"""
-    if current_user.role not in["doctor", "superadmin"]:
-        raise HTTPException(status_code=403, detail="Только для врачей")
-
-    moscow_tz = ZoneInfo("Europe/Moscow")
-    start_time_tz = req.start_time.replace(tzinfo=None).replace(tzinfo=moscow_tz)
-    end_time = start_time_tz + timedelta(minutes=req.duration_minutes)
-
-    # 1. Создаем запись
-    new_appt = Appointment(
-        user_id=current_user.id, 
-        doctor_id=current_user.id,
-        start_time=start_time_tz,
-        end_time=end_time,
-        status="completed", 
-        pet_info="🔒 ТЕХНИЧЕСКИЙ ПЕРЕРЫВ (Заблокировано врачом)",
-        meet_link=None
-    )
-    db.add(new_appt)
-    await db.commit()
-
-    # 2. ИСПРАВЛЕНИЕ: Явно достаем профиль врача из БД асинхронно
+@router.get("/doctor/schedule", response_model=List[DoctorDayScheduleResponse])
+async def get_doctor_schedule(target_date: date, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Отдает врачу картину его дня для управления слотами"""
+    if current_user.role not in ["doctor", "superadmin"]:
+        raise HTTPException(status_code=403)
+        
+    # Подгружаем профиль, чтобы знать расписание врача
     prof_res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == current_user.id))
     doc_prof = prof_res.scalars().first()
+    
+    start_h = WORK_START_HOUR
+    end_h = WORK_END_HOUR
+    duration = CONSULTATION_DURATION_MINUTES
 
-    # 3. Отправляем в Яндекс, если есть профиль и креды
-    if doc_prof and doc_prof.yandex_email:
-        # У нас уже импортирована create_yandex_event
-        from src.services.yandex_calendar_service import create_yandex_event
-        yandex_url = create_yandex_event(
-            start_time=start_time_tz,
-            summary="⛔ НЕ ЗАПИСЫВАТЬ (Блок)",
-            description="Слот заблокирован через сайт ВетЭксперт",
-            email=doc_prof.yandex_email,
-            password=doc_prof.yandex_password
-        )
-        
-        # Если у нас есть функция удаления (и мы сохраняем URL), то сохраним URL
-        if yandex_url:
-            from sqlalchemy import update
-            await db.execute(
-                update(Appointment)
-                .where(Appointment.id == new_appt.id)
-                .values(google_event_id=yandex_url)
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    start_of_day = datetime.combine(target_date, time.min).replace(tzinfo=moscow_tz)
+    end_of_day = datetime.combine(target_date, time.max).replace(tzinfo=moscow_tz)
+    
+    current_time = datetime.combine(target_date, time(start_h, 0))
+    end_time = datetime.combine(target_date, time(end_h, 0))
+    all_slots =[]
+    while current_time < end_time:
+        all_slots.append(current_time)
+        current_time += timedelta(minutes=duration)
+
+    # Достаем записи из БД
+    db_res = await db.execute(
+        select(Appointment).where(
+            and_(
+                Appointment.doctor_id == current_user.id,
+                Appointment.start_time >= start_of_day,
+                Appointment.start_time <= end_of_day,
+                Appointment.status.in_(["scheduled", "completed", "blocked"])
             )
-            await db.commit()
+        )
+    )
+    appointments = db_res.scalars().all()
 
-    return {"status": "ok", "message": "Время заблокировано"}
+    # Достаем Яндекс
+    yandex_slots =[]
+    if doc_prof and doc_prof.yandex_email:
+        yandex_slots = get_busy_slots_yandex(start_of_day, end_of_day, doc_prof.yandex_email, doc_prof.yandex_password)
+
+    schedule =[]
+    for slot in all_slots:
+        slot_end = slot + timedelta(minutes=duration)
+        state = "free"
+        appt_id = None
+        
+        # Проверяем БД
+        for appt in appointments:
+            appt_start = appt.start_time.astimezone(moscow_tz).replace(tzinfo=None) if appt.start_time.tzinfo else appt.start_time.replace(tzinfo=None)
+            if appt_start == slot:
+                state = "blocked" if appt.status == "blocked" else "booked"
+                appt_id = appt.id
+                break
+                
+        # Проверяем Яндекс (если свободно в БД)
+        if state == "free":
+            for b_start, b_end in yandex_slots:
+                if not (slot_end <= b_start or slot >= b_end):
+                    state = "yandex"
+                    break
+                    
+        schedule.append(DoctorDayScheduleResponse(time=slot.strftime('%H:%M'), state=state, appt_id=appt_id))
+        
+    return schedule
+
+@router.post("/doctor/manage-blocks")
+async def manage_doctor_blocks(req: ManageBlocksRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Блокировка и разблокировка массива слотов"""
+    if current_user.role not in ["doctor", "superadmin"]:
+        raise HTTPException(status_code=403)
+        
+    prof_res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == current_user.id))
+    doc_prof = prof_res.scalars().first()
+    duration = CONSULTATION_DURATION_MINUTES
+    moscow_tz = ZoneInfo("Europe/Moscow")
+
+    # 1. РАЗБЛОКИРОВКА (Удаляем технические записи)
+    for time_str in req.to_unblock:
+        slot_time = datetime.strptime(f"{req.date} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=moscow_tz)
+        
+        # Ищем блок
+        res = await db.execute(select(Appointment).where(
+            Appointment.doctor_id == current_user.id,
+            Appointment.start_time == slot_time,
+            Appointment.status == "blocked"
+        ))
+        appt = res.scalars().first()
+        
+        if appt:
+            # Удаляем из Яндекса
+            if appt.google_event_id and doc_prof and doc_prof.yandex_email:
+                delete_yandex_event(appt.google_event_id, doc_prof.yandex_email, doc_prof.yandex_password)
+            # Удаляем из БД
+            await db.delete(appt)
+
+    # 2. БЛОКИРОВКА (Создаем технические записи)
+    for time_str in req.to_block:
+        slot_time = datetime.strptime(f"{req.date} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=moscow_tz)
+        
+        # Проверяем, нет ли уже чего-то на это время
+        res = await db.execute(select(Appointment).where(
+            Appointment.doctor_id == current_user.id,
+            Appointment.start_time == slot_time,
+            Appointment.status.in_(["scheduled", "completed", "blocked"])
+        ))
+        if res.scalars().first():
+            continue # Пропускаем, если уже занято
+            
+        new_appt = Appointment(
+            user_id=current_user.id, 
+            doctor_id=current_user.id,
+            start_time=slot_time,
+            end_time=slot_time + timedelta(minutes=duration),
+            status="blocked", # ТЕПЕРЬ СПЕЦИАЛЬНЫЙ СТАТУС!
+            pet_info="🔒 Заблокировано врачом"
+        )
+        db.add(new_appt)
+        await db.commit() # Получаем ID
+        
+        if doc_prof and doc_prof.yandex_email:
+            yandex_url = create_yandex_event(
+                start_time=slot_time, summary="⛔ НЕ ЗАПИСЫВАТЬ", description="Заблокировано",
+                email=doc_prof.yandex_email, password=doc_prof.yandex_password
+            )
+            if yandex_url:
+                new_appt.google_event_id = yandex_url
+                await db.commit()
+
+    await db.commit()
+    return {"status": "ok"}

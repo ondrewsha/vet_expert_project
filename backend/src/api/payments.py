@@ -53,7 +53,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 
                 new_appt = Appointment(
                     user_id=user_id, doctor_id=doctor_id, start_time=start_time,
-                    end_time=start_time + timedelta(minutes=60), status="scheduled",
+                    end_time=start_time + timedelta(minutes=30), status="scheduled",
                     pet_info=pet_info, meet_link=meet_link
                 )
                 db.add(new_appt)

@@ -33,7 +33,7 @@ export default function Navbar() {
             {(user?.role === 'doctor' || user?.role === 'superadmin') && (
               <Link to="/doctor" className="bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-200 transition text-sm font-bold flex items-center gap-2">
                 <UploadCloud className="w-4 h-4" />
-                Опубликовать гайд
+                Панель специалиста
               </Link>
             )}
           </div>

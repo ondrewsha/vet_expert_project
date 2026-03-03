@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Optional, List
 from datetime import datetime
 
 # --- АВТОРИЗАЦИЯ ---
@@ -24,7 +24,7 @@ class CommentCreate(CommentBase):
 class CommentResponse(CommentBase):
     id: int
     user_id: int
-    user_name: Optional[str] = "Пользователь" # Имя автора
+    user_name: Optional[str] = "Пользователь"
     created_at: datetime
 
     class Config:
@@ -33,7 +33,7 @@ class CommentResponse(CommentBase):
 # --- ГАЙДЫ ---
 class GuideBase(BaseModel):
     title: str
-    description: Optional[str] = None
+    description: str
     free_snippet: Optional[str] = None
     price: float
     is_active: bool = True
@@ -45,19 +45,47 @@ class GuideResponse(GuideBase):
     id: int
     author_id: Optional[int] = None
     created_at: datetime
+    cover_image_id: Optional[str] = None
 
     class Config:
-        from_attributes = True # Позволяет Pydantic читать данные из моделей SQLAlchemy
+        from_attributes = True
 
 class GuideDetailResponse(GuideResponse):
     likes_count: int = 0
-    comments: List[CommentResponse] = []
-    is_liked: bool = False # Лайкнул ли текущий юзер
+    comments: List[CommentResponse] =[]
+    is_liked: bool = False
 
 # --- ДАННЫЕ ТОКЕНА ---
 class TokenData(BaseModel):
     user_id: Optional[str] = None
     role: Optional[str] = None
+
+# --- ВРАЧИ (Профиль) ---
+class DoctorProfileResponse(BaseModel):
+    description: Optional[str] = None
+    photo_url: Optional[str] = None
+    work_days: Optional[str] = None
+    start_hour: Optional[int] = None
+    end_hour: Optional[int] = None
+    slot_duration: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class DoctorBasicInfo(BaseModel):
+    id: int
+    full_name: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class DoctorResponse(BaseModel):
+    id: int
+    full_name: Optional[str] = None
+    doctor_profile: Optional[DoctorProfileResponse] = None
+
+    class Config:
+        from_attributes = True
 
 # --- ПОЛЬЗОВАТЕЛИ ---
 class UserResponse(BaseModel):
@@ -67,6 +95,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     role: str
     unused_consultations: int
+    doctor_profile: Optional[DoctorProfileResponse] = None # <--- ИСПРАВЛЕНИЕ ТУТ
 
     class Config:
         from_attributes = True
@@ -84,13 +113,6 @@ class AppointmentBase(BaseModel):
 class AppointmentCreate(AppointmentBase):
     doctor_id: Optional[int] = None
 
-class DoctorBasicInfo(BaseModel):
-    id: int
-    full_name: Optional[str] = None
-    
-    class Config:
-        from_attributes = True
-
 class AppointmentResponse(AppointmentBase):
     id: int
     end_time: datetime
@@ -103,18 +125,19 @@ class AppointmentResponse(AppointmentBase):
     class Config:
         from_attributes = True
 
-# --- ВРАЧИ ---
-class DoctorProfileResponse(BaseModel):
-    description: Optional[str] = None
-    photo_url: Optional[str] = None
+class RatingUpdate(BaseModel):
+    rating: int
 
-    class Config:
-        from_attributes = True
+class BlockSlotRequest(BaseModel):
+    start_time: datetime
+    duration_minutes: int = 60
 
-class DoctorResponse(BaseModel):
-    id: int
-    full_name: Optional[str] = None
-    doctor_profile: Optional[DoctorProfileResponse] = None
+class DoctorDayScheduleResponse(BaseModel):
+    time: str
+    state: str 
+    appt_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+class ManageBlocksRequest(BaseModel):
+    date: str
+    to_block: List[str]
+    to_unblock: List[str]

@@ -14,23 +14,32 @@ export default function Consultation() {
   const defaultDate = new Date(today.getTime() - offset).toISOString().split('T')[0];
 
   // Стейты
-  const[doctors, setDoctors] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [selectedDoctorId, setSelectedDoctorId] = useState(null); // null = "Не важно к кому"
   
   const [selectedDate, setSelectedDate] = useState(defaultDate);
-  const[slots, setSlots] = useState([]);
+  const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const[petInfo, setPetInfo] = useState('');
+  const [petInfo, setPetInfo] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
-  // 1. Загрузка списка врачей при монтировании компонента
+  // 1. Загрузка списка врачей ПРИ СМЕНЕ ДАТЫ
   useEffect(() => {
-    apiClient.get('/appointments/doctors')
-      .then(res => setDoctors(res.data))
-      .catch(err => console.error("Ошибка загрузки врачей", err));
-  },[]);
+    setLoadingDoctors(true);
+    apiClient.get(`/appointments/doctors?target_date=${selectedDate}`)
+      .then(res => {
+        setDoctors(res.data);
+        // Если выбранный ранее врач в этот день не работает - сбрасываем выбор
+        if (selectedDoctorId && !res.data.find(d => d.id === selectedDoctorId)) {
+            setSelectedDoctorId(null);
+        }
+      })
+      .catch(err => console.error("Ошибка загрузки врачей", err))
+      .finally(() => setLoadingDoctors(false));
+  }, [selectedDate, selectedDoctorId]);
 
   // 2. Загрузка слотов при смене даты ИЛИ смене врача
   useEffect(() => {
@@ -51,7 +60,7 @@ export default function Consultation() {
     };
 
     fetchSlots();
-  }, [selectedDate, selectedDoctorId]); // <--- Теперь слоты перезапрашиваются при выборе врача
+  }, [selectedDate, selectedDoctorId]);
 
   // Обработчики
   const handleDateChange = (e) => {
@@ -61,7 +70,7 @@ export default function Consultation() {
 
   const handleDoctorSelect = (docId) => {
     setSelectedDoctorId(docId);
-    setSelectedSlot(null); // Сбрасываем выбранное время при смене врача
+    setSelectedSlot(null);
   };
 
   const formatTime = (isoString) => {
@@ -81,7 +90,7 @@ export default function Consultation() {
       const res = await apiClient.post('/appointments/book', {
         start_time: selectedSlot,
         pet_info: petInfo,
-        doctor_id: selectedDoctorId // Передаем выбранного врача (или null)
+        doctor_id: selectedDoctorId
       });
       
       if (!res.data.payment_url) {
@@ -125,51 +134,60 @@ export default function Consultation() {
               Специалист
             </h2>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Карточка "Любой врач" */}
-              <div 
-                onClick={() => handleDoctorSelect(null)}
-                className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center ${
-                  selectedDoctorId === null 
-                    ? 'border-primary bg-emerald-50' 
-                    : 'border-gray-100 hover:border-emerald-200 bg-white'
-                }`}
-              >
-                <div className={`p-3 rounded-full mb-3 ${selectedDoctorId === null ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
-                  <UserPlus className="w-6 h-6" />
+            {loadingDoctors ? (
+                <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+            ) : doctors.length === 0 ? (
+                <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-center text-sm">
+                    В выбранный день ({new Date(selectedDate).toLocaleDateString('ru-RU')}) нет принимающих специалистов. 
+                    Пожалуйста, выберите другую дату в календаре ниже.
                 </div>
-                <h3 className="font-bold text-gray-900">Ближайшее время</h3>
-                <p className="text-xs text-gray-500 mt-1">Не важно, к кому</p>
-              </div>
-
-              {/* Карточки конкретных врачей */}
-              {doctors.map(doc => (
-                <div 
-                  key={doc.id}
-                  onClick={() => handleDoctorSelect(doc.id)}
-                  className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex items-start gap-4 ${
-                    selectedDoctorId === doc.id 
-                      ? 'border-primary bg-emerald-50' 
-                      : 'border-gray-100 hover:border-emerald-200 bg-white'
-                  }`}
-                >
-                  {doc.doctor_profile?.photo_url ? (
-                    <img src={doc.doctor_profile.photo_url} alt={doc.full_name} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-200" />
-                  ) : (
-                    <div className="w-14 h-14 rounded-full bg-gray-200 flex shrink-0 items-center justify-center text-gray-400 font-bold text-xl">
-                      {doc.full_name ? doc.full_name[0] : 'В'}
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Карточка "Любой врач" */}
+                  <div 
+                    onClick={() => handleDoctorSelect(null)}
+                    className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center text-center ${
+                      selectedDoctorId === null 
+                        ? 'border-primary bg-emerald-50' 
+                        : 'border-gray-100 hover:border-emerald-200 bg-white'
+                    }`}
+                  >
+                    <div className={`p-3 rounded-full mb-3 ${selectedDoctorId === null ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
+                      <UserPlus className="w-6 h-6" />
                     </div>
-                  )}
-                  
-                  <div>
-                    <h3 className="font-bold text-gray-900 leading-tight">{doc.full_name || 'Специалист'}</h3>
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                      {doc.doctor_profile?.description || 'Ветеринарный врач'}
-                    </p>
+                    <h3 className="font-bold text-gray-900">Ближайшее время</h3>
+                    <p className="text-xs text-gray-500 mt-1">Не важно, к кому</p>
                   </div>
+
+                  {/* Карточки конкретных врачей */}
+                  {doctors.map(doc => (
+                    <div 
+                      key={doc.id}
+                      onClick={() => handleDoctorSelect(doc.id)}
+                      className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex items-start gap-4 ${
+                        selectedDoctorId === doc.id 
+                          ? 'border-primary bg-emerald-50' 
+                          : 'border-gray-100 hover:border-emerald-200 bg-white'
+                      }`}
+                    >
+                      {doc.doctor_profile?.photo_url ? (
+                        <img src={doc.doctor_profile.photo_url} alt={doc.full_name} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-200" />
+                      ) : (
+                        <div className="w-14 h-14 rounded-full bg-gray-200 flex shrink-0 items-center justify-center text-gray-400 font-bold text-xl">
+                          {doc.full_name ? doc.full_name[0].toUpperCase() : 'В'}
+                        </div>
+                      )}
+                      
+                      <div>
+                        <h3 className="font-bold text-gray-900 leading-tight">{doc.full_name || 'Специалист'}</h3>
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                          {doc.doctor_profile?.description || 'Ветеринарный врач'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+            )}
           </div>
 
           {/* Блок выбора даты и времени */}
@@ -187,7 +205,7 @@ export default function Consultation() {
                   min={new Date().toISOString().split('T')[0]} 
                   value={selectedDate}
                   onChange={handleDateChange}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition cursor-pointer"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition cursor-pointer bg-white"
                 />
               </div>
 
@@ -198,9 +216,14 @@ export default function Consultation() {
                   Время
                 </h2>
                 
-                {loadingSlots ? (
+                {loadingSlots || loadingDoctors ? (
                   <div className="flex justify-center py-6">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : doctors.length === 0 ? (
+                  // ИСПРАВЛЕНИЕ: Если врачей нет, явно пишем об этом и не даем выбрать слоты
+                  <div className="text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    В этот день приемов нет.
                   </div>
                 ) : slots.length === 0 ? (
                   <div className="text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
