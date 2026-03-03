@@ -31,7 +31,7 @@ async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSes
     if current_user.role != "superadmin": raise HTTPException(403)
     
     users = await db.scalar(select(func.count(User.id)))
-    doctors = await db.scalar(select(func.count(User.id)).where(User.role == "doctor"))
+    doctors = await db.scalar(select(func.count(User.id)).where(User.role.in_(["doctor", "superadmin"])))
     appts = await db.scalar(select(func.count(Appointment.id)).where(Appointment.status == "completed"))
     purchases = await db.scalar(select(func.count(Purchase.id)).where(Purchase.status == "succeeded"))
     
@@ -48,7 +48,7 @@ async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSes
 async def get_all_doctors_admin(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if current_user.role != "superadmin": raise HTTPException(403)
     # Возвращаем всех врачей (даже неактивных)
-    res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.role == "doctor").order_by(User.id))
+    res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"])).order_by(User.id))
     return res.scalars().all()
 
 @router.post("/doctors")
