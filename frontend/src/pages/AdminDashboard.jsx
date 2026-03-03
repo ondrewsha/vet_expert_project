@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import { Users, DollarSign, Activity, UserPlus, Power, Trash2, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Users, DollarSign, Activity, UserPlus, Power, Loader2, CheckCircle, RefreshCcw } from 'lucide-react';
 import { formatPhone } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -14,21 +14,16 @@ export default function AdminDashboard() {
   // Добавление врача
   const [newDocPhone, setNewDocPhone] = useState('');
   const [newDocName, setNewDocName] = useState('');
+  const [newDocDesc, setNewDocDesc] = useState('');
+  const [newDocYandex, setNewDocYandex] = useState('');
+  const [newDocPass, setNewDocPass] = useState('');
   const [addingDoc, setAddingDoc] = useState(false);
 
   const worksDaysMap = {
-    0: 'Пн',
-    1: 'Вт',
-    2: 'Ср',
-    3: 'Чт',
-    4: 'Пт',
-    5: 'Сб',
-    6: 'Вс'
+    0: 'Пн', 1: 'Вт', 2: 'Ср', 3: 'Чт', 4: 'Пт', 5: 'Сб', 6: 'Вс'
   };
 
-  useEffect(() => {
-    if (user?.role !== 'superadmin') return;
-    
+  const fetchData = () => {
     Promise.all([
       apiClient.get('/superadmin/stats'),
       apiClient.get('/superadmin/doctors')
@@ -37,6 +32,11 @@ export default function AdminDashboard() {
       setDoctors(docRes.data);
     }).catch(() => toast.error("Ошибка загрузки данных"))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (user?.role !== 'superadmin') return;
+    fetchData();
   }, [user]);
 
   if (user?.role !== 'superadmin') return <div className="p-10 text-center text-red-500">Доступ запрещен</div>;
@@ -48,13 +48,16 @@ export default function AdminDashboard() {
     try {
         await apiClient.post('/superadmin/doctors', { 
             phone: newDocPhone.replace(/[^\d+]/g, ''), 
-            full_name: newDocName 
+            full_name: newDocName,
+            description: newDocDesc,
+            yandex_email: newDocYandex,
+            yandex_password: newDocPass
         });
         toast.success("Врач добавлен!");
-        setNewDocPhone(''); setNewDocName('');
+        // Очистка
+        setNewDocPhone(''); setNewDocName(''); setNewDocDesc(''); setNewDocYandex(''); setNewDocPass('');
         // Обновляем список
-        const res = await apiClient.get('/superadmin/doctors');
-        setDoctors(res.data);
+        fetchData();
     } catch (e) {
         toast.error("Ошибка добавления врача");
         console.error(e);
@@ -76,7 +79,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
-      <h1 className="text-3xl font-extrabold text-gray-900 mb-8">Административная панель</h1>
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-extrabold text-gray-900">Административная панель</h1>
+        <button onClick={fetchData} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition">
+            <RefreshCcw className="w-5 h-5 text-gray-600" />
+        </button>
+      </div>
 
       {/* СТАТИСТИКА */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
@@ -93,29 +101,37 @@ export default function AdminDashboard() {
             <h2 className="text-xl font-bold mb-6">Управление врачами</h2>
             <div className="space-y-4">
                 {doctors.map(doc => (
-                    <div key={doc.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-gray-300 transition">
+                    <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-100 rounded-xl hover:border-gray-300 transition gap-4">
                         <div className="flex items-center gap-4">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${doc.doctor_profile?.is_active !== false ? 'bg-emerald-500' : 'bg-gray-400'}`}>
                                 {doc.full_name?.[0] || "D"}
                             </div>
                             <div>
                                 <div className="font-bold text-gray-900">{doc.full_name}</div>
-                                <div className="text-xs text-gray-500">
-                                    {doc.doctor_profile?.work_days.split(',').map(day => worksDaysMap[day]).join(', ')}
+                                
+                                <div className="text-xs text-gray-400">
+                                    {doc.doctor_profile?.work_days 
+                                        ? doc.doctor_profile.work_days.split(',').map(day => worksDaysMap[day]).join(', ')
+                                        : "График не настроен"}
                                 </div>
                             </div>
                         </div>
-                        <button 
-                            onClick={() => toggleDoctor(doc.id)}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                                doc.doctor_profile?.is_active !== false 
-                                ? 'bg-red-50 text-red-600 hover:bg-red-100' 
-                                : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                            }`}
-                        >
-                            <Power className="w-4 h-4" />
-                            {doc.doctor_profile?.is_active !== false ? 'Отключить' : 'Включить'}
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <div className="text-xs text-gray-400 hidden sm:block truncate max-w-37.5">
+                                {doc.doctor_profile?.description || "Нет описания"}
+                            </div>
+                            <button 
+                                onClick={() => toggleDoctor(doc.id)}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                                    doc.doctor_profile?.is_active !== false 
+                                    ? 'bg-red-50 text-red-600 hover:bg-red-100' 
+                                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                }`}
+                            >
+                                <Power className="w-4 h-4" />
+                                {doc.doctor_profile?.is_active !== false ? 'Отключить' : 'Включить'}
+                            </button>
+                        </div>
                     </div>
                 ))}
             </div>
@@ -135,8 +151,23 @@ export default function AdminDashboard() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
                     <input required type="tel" value={formatPhone(newDocPhone)} onChange={e => setNewDocPhone(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="+7..." />
                 </div>
-                <button disabled={addingDoc} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition flex justify-center">
-                    {addingDoc ? <Loader2 className="animate-spin"/> : "Добавить"}
+                
+                {/* Новые поля */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Описание (Опционально)</label>
+                    <textarea rows="2" value={newDocDesc} onChange={e => setNewDocDesc(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary resize-none" placeholder="Специализация, стаж..." />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Яндекс Почта (Для календаря)</label>
+                    <input type="email" value={newDocYandex} onChange={e => setNewDocYandex(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="doctor@yandex.ru" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Пароль приложений Яндекса</label>
+                    <input type="password" value={newDocPass} onChange={e => setNewDocPass(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary" placeholder="Вставьте токен" />
+                </div>
+
+                <button disabled={addingDoc} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition flex justify-center mt-4">
+                    {addingDoc ? <Loader2 className="animate-spin"/> : "Добавить и сохранить"}
                 </button>
             </form>
         </div>

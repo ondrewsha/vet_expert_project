@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 from src.database import get_db
@@ -15,6 +15,9 @@ router = APIRouter(prefix="/api/superadmin", tags=["SuperAdmin"])
 class CreateDoctorRequest(BaseModel):
     phone: str
     full_name: str
+    description: Optional[str] = None
+    yandex_email: Optional[str] = None
+    yandex_password: Optional[str] = None
 
 class StatsResponse(BaseModel):
     total_users: int
@@ -28,7 +31,7 @@ async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSes
     if current_user.role != "superadmin": raise HTTPException(403)
     
     users = await db.scalar(select(func.count(User.id)))
-    doctors = await db.scalar(select(func.count(User.id)).where(User.role == "doctor" or User.role == "superadmin"))
+    doctors = await db.scalar(select(func.count(User.id)).where(User.role == "doctor"))
     appts = await db.scalar(select(func.count(Appointment.id)).where(Appointment.status == "completed"))
     purchases = await db.scalar(select(func.count(Purchase.id)).where(Purchase.status == "succeeded"))
     
@@ -45,14 +48,14 @@ async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSes
 async def get_all_doctors_admin(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if current_user.role != "superadmin": raise HTTPException(403)
     # Возвращаем всех врачей (даже неактивных)
-    res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.role == "doctor" or User.role == "superadmin").order_by(User.id))
+    res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.role == "doctor").order_by(User.id))
     return res.scalars().all()
 
 @router.post("/doctors")
 async def create_doctor(req: CreateDoctorRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if current_user.role != "superadmin": raise HTTPException(403)
     
-    # Проверяем, есть ли юзер
+    # 1. Создаем/Ищем юзера
     res = await db.execute(select(User).where(User.phone == req.phone))
     user = res.scalars().first()
     
@@ -64,13 +67,25 @@ async def create_doctor(req: CreateDoctorRequest, current_user: User = Depends(g
         db.add(user)
         await db.flush() # Получаем ID
         
-    # Создаем профиль, если нет
+    # 2. Создаем/Обновляем профиль с данными
     prof_res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == user.id))
-    if not prof_res.scalars().first():
-        db.add(DoctorProfile(user_id=user.id))
+    prof = prof_res.scalars().first()
+    
+    if not prof:
+        prof = DoctorProfile(
+            user_id=user.id,
+            description=req.description,
+            yandex_email=req.yandex_email,
+            yandex_password=req.yandex_password
+        )
+        db.add(prof)
+    else:
+        prof.description = req.description
+        prof.yandex_email = req.yandex_email
+        prof.yandex_password = req.yandex_password
         
     await db.commit()
-    return {"status": "ok", "message": "Врач добавлен"}
+    return {"status": "ok", "message": "Врач успешно сохранен"}
 
 @router.patch("/doctors/{id}/toggle")
 async def toggle_doctor_active(id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
