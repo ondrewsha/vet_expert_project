@@ -364,8 +364,18 @@ export default function Profile() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {guides.map(guide => (
             <div key={guide.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col items-center text-center hover:shadow-md transition">
-              <div className="bg-emerald-50 p-4 rounded-full mb-4">
-                <Book className="w-8 h-8 text-primary" />
+              <div className="md:w-1/3 bg-gray-50 flex items-center justify-center relative overflow-hidden">
+                  {guide.cover_image_id ? (
+                    <img 
+                      src={`/api/guides/${guide.id}/cover`} 
+                      alt={guide.title} 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-linear-to-br from-emerald-100 to-teal-50 flex items-center justify-center p-12">
+                      <Book className="w-32 h-32 text-emerald-400 drop-shadow-md" />
+                    </div>
+                  )}
               </div>
               <h3 className="text-lg font-bold text-gray-900 mb-2">{guide.title}</h3>
               <p className="text-sm text-gray-500 mb-6 grow">Доступ открыт навсегда</p>
