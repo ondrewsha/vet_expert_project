@@ -8,6 +8,10 @@ export default function DoctorDashboard() {
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState('schedule'); 
 
+  // --- ЛИМИТЫ ДЛЯ ГАЙДОВ ---
+  const MAX_DESC_LEN = 500;
+  const MAX_SNIPPET_LEN = 500;
+
   // --- Стейты Гайда ---
   const [myGuides, setMyGuides] = useState([]); 
   const [editingGuideId, setEditingGuideId] = useState(null); 
@@ -18,6 +22,11 @@ export default function DoctorDashboard() {
   const [price, setPrice] = useState('');
   const [file, setFile] = useState(null);
   const [cover, setCover] = useState(null);
+  
+  // Для отображения уже загруженных файлов при редактировании
+  const [existingCoverUrl, setExistingCoverUrl] = useState(null);
+  const [existingPdf, setExistingPdf] = useState(false);
+  
   const [loadingGuide, setLoadingGuide] = useState(false);
 
   // --- Стейты Умного Расписания ---
@@ -147,7 +156,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Вспомогательная функция рендера слотов
   const renderSlot = (slot) => {
     const isPendingBlock = toBlock.includes(slot.time);
     const isPendingUnblock = toUnblock.includes(slot.time);
@@ -230,11 +238,15 @@ export default function DoctorDashboard() {
       setPrice(guide.price);
       setFile(null); 
       setCover(null);
+      // Подтягиваем инфу о существующих файлах
+      setExistingCoverUrl(guide.cover_image_id ? `/api/guides/${guide.id}/cover` : null);
+      setExistingPdf(!!guide.mongo_file_id);
   };
 
   const cancelEditing = () => {
       setEditingGuideId(null);
       setTitle(''); setDescription(''); setSnippet(''); setPrice(''); setFile(null); setCover(null);
+      setExistingCoverUrl(null); setExistingPdf(false);
   };
 
   const handleGuideSubmit = async (e) => {
@@ -271,6 +283,13 @@ export default function DoctorDashboard() {
     }
   };
 
+  // Вспомогательная функция для цвета счетчиков
+  const getCounterColor = (current, max) => {
+    if (current >= max) return 'text-red-500 font-bold';
+    if (current >= max * 0.9) return 'text-amber-500 font-bold';
+    return 'text-gray-400';
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
       <h1 className="text-3xl font-extrabold text-gray-900 mb-8">Панель специалиста</h1>
@@ -288,17 +307,16 @@ export default function DoctorDashboard() {
         </button>
       </div>
 
-      {/* --- ВКЛАДКА 1: РАСПИСАНИЕ (УМНАЯ СЕТКА) --- */}
+      {/* --- ВКЛАДКА 1: РАСПИСАНИЕ --- */}
       {activeTab === 'schedule' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 animate-in fade-in">
-          
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 pb-6 border-b border-gray-100">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Управление слотами</h2>
               <p className="text-sm text-gray-500">Кликайте на слоты, чтобы заблокировать или разблокировать их.</p>
             </div>
             <div className="flex items-center gap-4">
-              <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-primary outline-none" />
+              <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-primary outline-none cursor-pointer" />
               <button onClick={toggleWholeDay} className="flex items-center gap-2 text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-xl transition">
                 <CheckSquare className="w-4 h-4" /> Весь день
               </button>
@@ -316,7 +334,7 @@ export default function DoctorDashboard() {
               {(toBlock.length > 0 || toUnblock.length > 0) && (
                 <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-200 animate-in slide-in-from-bottom-4">
                   <div className="text-sm text-gray-700 font-medium">
-                    Выбрано для блокировки: <span className="text-red-600 font-bold">{toBlock.length}</span> | 
+                    Для блокировки: <span className="text-red-600 font-bold">{toBlock.length}</span> | 
                     Для разблокировки: <span className="text-emerald-600 font-bold">{toUnblock.length}</span>
                   </div>
                   <button onClick={handleSaveSchedule} disabled={savingSchedule} className="bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-gray-800 transition flex items-center gap-2 disabled:opacity-50">
@@ -330,7 +348,7 @@ export default function DoctorDashboard() {
         </div>
       )}
 
-      {/* --- ВКЛАДКА 2: НАСТРОЙКИ (РАБОЧИЕ ДНИ) --- */}
+      {/* --- ВКЛАДКА 2: НАСТРОЙКИ --- */}
       {activeTab === 'settings' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 animate-in fade-in max-w-2xl">
             <h2 className="text-xl font-bold text-gray-900 mb-2">Настройки графика работы</h2>
@@ -402,7 +420,7 @@ export default function DoctorDashboard() {
             {/* ФОРМА СОЗДАНИЯ / РЕДАКТИРОВАНИЯ */}
             <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 relative">
                 {editingGuideId && (
-                    <button onClick={cancelEditing} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 bg-gray-100 rounded-full p-1 transition">
+                    <button onClick={cancelEditing} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 bg-gray-100 rounded-full p-1 transition" title="Отменить редактирование">
                         <X className="w-5 h-5" />
                     </button>
                 )}
@@ -411,8 +429,8 @@ export default function DoctorDashboard() {
                     {editingGuideId ? <><Edit3 className="w-5 h-5 text-blue-500"/> Редактирование гайда</> : <><UploadCloud className="w-5 h-5 text-primary"/> Новый гайд</>}
                 </h2>
 
-                <form onSubmit={handleGuideSubmit} className="space-y-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <form onSubmit={handleGuideSubmit} className="space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                         <div className="sm:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">Название</label>
                             <input type="text" required value={title} onChange={e => setTitle(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none transition" />
@@ -422,30 +440,51 @@ export default function DoctorDashboard() {
                             <input type="number" required min="0" value={price} onChange={e => setPrice(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none transition" />
                         </div>
                     </div>
+                    
+                    {/* Описание с лимитом */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
-                        <textarea required rows="3" value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none transition"></textarea>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Фрагмент (Тизер)</label>
-                        <textarea rows="3" value={snippet} onChange={e => setSnippet(e.target.value)} placeholder="Для предпросмотра на странице гайда..." className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none bg-emerald-50/30 transition"></textarea>
+                        <textarea required rows="4" maxLength={MAX_DESC_LEN} value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none transition"></textarea>
+                        <div className={`text-right text-xs mt-1 ${getCounterColor(description.length, MAX_DESC_LEN)}`}>
+                            {description.length} / {MAX_DESC_LEN}
+                        </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {/* Фрагмент с лимитом */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Фрагмент (Тизер)</label>
+                        <textarea rows="3" maxLength={MAX_SNIPPET_LEN} value={snippet} onChange={e => setSnippet(e.target.value)} placeholder="Для предпросмотра на странице гайда..." className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none bg-emerald-50/30 transition"></textarea>
+                        <div className={`text-right text-xs mt-1 ${getCounterColor(snippet.length, MAX_SNIPPET_LEN)}`}>
+                            {snippet.length} / {MAX_SNIPPET_LEN}
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-2">
                         {/* ФАЙЛ PDF */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Полная версия (PDF) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}
                             </label>
-                            <div className="flex items-center justify-center w-full">
-                                <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition ${file ? 'border-primary bg-emerald-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
-                                    <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-2">
-                                        <UploadCloud className={`w-6 h-6 mb-1 ${file ? 'text-primary' : 'text-gray-400'}`} />
-                                        <p className="text-xs font-medium text-gray-500 line-clamp-1">{file ? file.name : "Выбрать PDF"}</p>
+                            <label className={`relative flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${file || existingPdf ? 'border-primary bg-emerald-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
+                                {file ? (
+                                    <div className="flex flex-col items-center p-2 text-center z-10">
+                                        <UploadCloud className="w-6 h-6 mb-1 text-primary" />
+                                        <p className="text-xs font-medium text-gray-700 truncate w-full px-2">{file.name}</p>
                                     </div>
-                                    <input type="file" accept="application/pdf" className="hidden" onChange={e => setFile(e.target.files[0])} />
-                                </label>
-                            </div>
+                                ) : existingPdf ? (
+                                    <div className="flex flex-col items-center p-2 text-center z-10">
+                                        <CheckCircle className="w-6 h-6 mb-1 text-primary" />
+                                        <p className="text-xs font-bold text-emerald-800">PDF загружен</p>
+                                        <p className="text-[10px] text-emerald-600 mt-1">Нажмите для замены</p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center p-2 text-center z-10">
+                                        <UploadCloud className="w-6 h-6 mb-1 text-gray-400" />
+                                        <p className="text-xs font-medium text-gray-500">Выбрать PDF</p>
+                                    </div>
+                                )}
+                                <input type="file" accept="application/pdf" className="hidden" onChange={e => setFile(e.target.files[0])} />
+                            </label>
                         </div>
 
                         {/* ОБЛОЖКА JPG/PNG */}
@@ -453,26 +492,39 @@ export default function DoctorDashboard() {
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Обложка (Картинка) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}
                             </label>
-                            <div className="flex items-center justify-center w-full">
-                                <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition ${cover ? 'border-blue-400 bg-blue-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
-                                    <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-2">
-                                        <ImageIcon className={`w-6 h-6 mb-1 ${cover ? 'text-blue-500' : 'text-gray-400'}`} />
-                                        <p className="text-xs font-medium text-gray-500 line-clamp-1">{cover ? cover.name : "Загрузить фото"}</p>
+                            <label className={`relative flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${cover || existingCoverUrl ? 'border-blue-400 bg-blue-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
+                                {cover ? (
+                                    <div className="flex flex-col items-center z-10 p-2 text-center">
+                                        <ImageIcon className="w-6 h-6 mb-1 text-blue-500" />
+                                        <p className="text-xs font-medium text-gray-700 truncate w-full px-2">{cover.name}</p>
                                     </div>
-                                    <input type="file" accept="image/*" className="hidden" onChange={e => setCover(e.target.files[0])} />
-                                </label>
-                            </div>
+                                ) : existingCoverUrl ? (
+                                    <>
+                                        <img src={existingCoverUrl} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="Cover preview" />
+                                        <div className="flex flex-col items-center z-10 p-2 text-center">
+                                            <ImageIcon className="w-6 h-6 mb-1 text-blue-600" />
+                                            <p className="text-xs font-bold text-blue-800 bg-white/70 px-2 py-1 rounded">Текущая обложка</p>
+                                            <p className="text-[10px] text-blue-700 mt-1 bg-white/70 px-2 rounded">Нажмите для замены</p>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col items-center p-2 text-center z-10">
+                                        <ImageIcon className="w-6 h-6 mb-1 text-gray-400" />
+                                        <p className="text-xs font-medium text-gray-500">Загрузить фото</p>
+                                    </div>
+                                )}
+                                <input type="file" accept="image/*" className="hidden" onChange={e => setCover(e.target.files[0])} />
+                            </label>
                         </div>
                     </div>
 
-                    <button type="submit" disabled={loadingGuide} className={`w-full text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition disabled:opacity-50 ${editingGuideId ? 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20' : 'bg-primary hover:bg-emerald-600 shadow-md shadow-emerald-500/20'}`}>
+                    <button type="submit" disabled={loadingGuide} className={`w-full text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition mt-4 disabled:opacity-50 ${editingGuideId ? 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20' : 'bg-primary hover:bg-emerald-600 shadow-md shadow-emerald-500/20'}`}>
                         {loadingGuide ? <Loader2 className="w-5 h-5 animate-spin" /> : (editingGuideId ? "Сохранить изменения" : "Опубликовать гайд")}
                     </button>
                 </form>
             </div>
         </div>
       )}
-      
     </div>
   );
 }
