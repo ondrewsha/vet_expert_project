@@ -49,6 +49,7 @@ export default function DoctorDashboard() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [myDesc, setMyDesc] = useState('');
   const [myPhoto, setMyPhoto] = useState(null);
+  const [myPhotoUrl, setMyPhotoUrl] = useState(null);
 
   // --- ЭФФЕКТЫ ---
   useEffect(() => {
@@ -63,40 +64,41 @@ export default function DoctorDashboard() {
 
     if (activeTab === 'schedule') {
         const fetchSchedule = async () => {
-            setLoadingSchedule(true);
-            setToBlock([]); 
-            setToUnblock([]);
-            try {
-              const res = await apiClient.get(`/appointments/doctor/schedule?target_date=${scheduleDate}`);
-              setScheduleSlots(res.data);
-            } catch (e) {
-              toast.error("Ошибка загрузки расписания");
-              console.error("Ошибка загрузки расписания", e);
-            } finally { 
-              setLoadingSchedule(false); 
-            }
-          };
-          fetchSchedule();
+          setLoadingSchedule(true);
+          setToBlock([]); 
+          setToUnblock([]);
+          try {
+            const res = await apiClient.get(`/appointments/doctor/schedule?target_date=${scheduleDate}`);
+            setScheduleSlots(res.data);
+          } catch (e) {
+            toast.error("Ошибка загрузки расписания");
+            console.error("Ошибка загрузки расписания", e);
+          } finally { 
+            setLoadingSchedule(false); 
+          }
+        };
+        fetchSchedule();
     }
     
     if (activeTab === 'settings') {
         const fetchSettings = async () => {
-            setLoadingSettings(true);
-            try {
-              const res = await apiClient.get('/users/me');
-              const docProfile = res.data.doctor_profile;
-              if (docProfile && docProfile.work_days) {
-                  setWorkDays(docProfile.work_days.split(',').map(Number));
-                  setMyDesc(docProfile.description || '');
-              }
-            } catch (e) {
-              toast.error("Ошибка загрузки настроек");
-              console.error("Ошибка загрузки настроек", e);
-            } finally { 
-              setLoadingSettings(false); 
+          setLoadingSettings(true);
+          try {
+            const res = await apiClient.get('/users/me');
+            const docProfile = res.data.doctor_profile;
+            if (docProfile) {
+                if (docProfile.work_days) setWorkDays(docProfile.work_days.split(',').map(Number));
+                setMyDesc(docProfile.description || '');
+                setMyPhotoUrl(docProfile.photo_url ? `/api/users/${res.data.id}/photo` : null);
             }
-          };
-          fetchSettings();
+          } catch (e) {
+            toast.error("Ошибка загрузки настроек");
+            console.error("Ошибка загрузки настроек", e);
+          } finally { 
+            setLoadingSettings(false); 
+          }
+        };
+        fetchSettings();
     }
   }, [scheduleDate, activeTab, user]);
 
@@ -371,10 +373,27 @@ export default function DoctorDashboard() {
                         <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider">Мой профиль</h3>
                         <textarea rows="3" value={myDesc} onChange={e => setMyDesc(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none mb-3" placeholder="Расскажите о себе пациентам..." />
                         
-                        <label className="flex items-center gap-3 cursor-pointer bg-gray-50 border border-gray-200 p-3 rounded-xl hover:bg-gray-100 transition w-fit">
-                            <ImageIcon className="w-5 h-5 text-gray-500" />
-                            <span className="text-sm text-gray-700 font-medium">{myPhoto ? myPhoto.name : "Загрузить новое фото"}</span>
-                            <input type="file" accept="image/*" className="hidden" onChange={e => setMyPhoto(e.target.files[0])} />
+                        <label className={`relative flex items-center gap-4 cursor-pointer bg-gray-50 border-2 border-dashed border-gray-200 p-4 rounded-xl hover:bg-gray-100 transition w-full sm:w-fit ${myPhoto || myPhotoUrl ? 'border-primary/50 bg-emerald-50/50' : ''}`}>
+                          <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden shrink-0 border border-gray-300">
+                              {myPhoto ? (
+                                  <img src={URL.createObjectURL(myPhoto)} className="w-full h-full object-cover" />
+                              ) : myPhotoUrl ? (
+                                  <img src={myPhotoUrl} className="w-full h-full object-cover" />
+                              ) : (
+                                  <ImageIcon className="w-8 h-8 text-gray-400" />
+                              )}
+                          </div>
+                          
+                          <div className="flex flex-col">
+                              <span className="text-sm font-bold text-gray-700">
+                                  {myPhoto ? "Выбрано новое фото" : myPhotoUrl ? "Сменить фото" : "Загрузить фото"}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                  {myPhoto ? myPhoto.name : "JPG, PNG до 5MB"}
+                              </span>
+                          </div>
+                          
+                          <input type="file" accept="image/*" className="hidden" onChange={e => setMyPhoto(e.target.files[0])} />
                         </label>
                     </div>
 

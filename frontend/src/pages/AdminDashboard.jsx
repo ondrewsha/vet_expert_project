@@ -20,6 +20,7 @@ export default function AdminDashboard() {
   const [yandexPass, setYandexPass] = useState('');
   const [link, setLink] = useState('');
   const [file, setFile] = useState(null); // Фото
+  const [existingPhoto, setExistingPhoto] = useState(null);
   
   const [processing, setProcessing] = useState(false);
 
@@ -52,6 +53,7 @@ export default function AdminDashboard() {
     setYandexEmail(doc.doctor_profile?.yandex_email || '');
     setYandexPass(doc.doctor_profile?.yandex_password || ''); // Пароль лучше не светить, но для удобства оставим
     setLink(doc.doctor_profile?.telemost_link || '');
+    setExistingPhoto(doc.doctor_profile?.photo_url ? `/api/users/${doc.id}/photo` : null);
     setFile(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -59,6 +61,7 @@ export default function AdminDashboard() {
   const cancelEdit = () => {
     setEditingId(null);
     setName(''); setPhone(''); setDesc(''); setYandexEmail(''); setYandexPass(''); setLink(''); setFile(null);
+    setExistingPhoto(null);
   };
 
   const handleSubmit = async (e) => {
@@ -182,9 +185,28 @@ export default function AdminDashboard() {
                     <textarea rows="2" value={desc} onChange={e => setDesc(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary resize-none mb-3" placeholder="Описание, регалии..." />
                     <input type="text" value={link} onChange={e => setLink(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-primary mb-3" placeholder="Ссылка на Телемост" />
                     
-                    <label className="flex items-center gap-2 cursor-pointer bg-gray-50 border border-gray-200 p-2 rounded-xl hover:bg-gray-100">
-                        <ImageIcon className="w-5 h-5 text-gray-400" />
-                        <span className="text-sm text-gray-600 truncate">{file ? file.name : "Загрузить фото"}</span>
+                    <label className={`relative flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${file || existingPhoto ? 'border-blue-400 bg-blue-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
+                        {file ? (
+                            <div className="flex flex-col items-center z-10 p-2 text-center">
+                                <ImageIcon className="w-6 h-6 mb-1 text-blue-500" />
+                                <p className="text-xs font-medium text-gray-700 truncate w-full px-2">{file.name}</p>
+                                <p className="text-[10px] text-blue-600 mt-1">Новое фото выбрано</p>
+                            </div>
+                        ) : existingPhoto ? (
+                            <>
+                                <img src={existingPhoto} className="absolute inset-0 w-full h-full object-cover opacity-50" alt="Avatar preview" />
+                                <div className="flex flex-col items-center z-10 p-2 text-center bg-white/80 rounded-lg backdrop-blur-sm shadow-sm">
+                                    <ImageIcon className="w-5 h-5 mb-1 text-blue-600" />
+                                    <p className="text-xs font-bold text-blue-900">Текущее фото</p>
+                                    <p className="text-[10px] text-blue-700">Нажмите для замены</p>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex flex-col items-center p-2 text-center z-10">
+                                <ImageIcon className="w-6 h-6 mb-1 text-gray-400" />
+                                <p className="text-xs font-medium text-gray-500">Загрузить фото</p>
+                            </div>
+                        )}
                         <input type="file" accept="image/*" className="hidden" onChange={e => setFile(e.target.files[0])} />
                     </label>
                 </div>

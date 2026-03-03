@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from src.database import get_db, fs
 from src.models import User, DoctorProfile, Appointment, Purchase
 from src.core.security import get_current_user
-from src.schemas.schemas import DoctorResponse
+from src.schemas.schemas import DoctorAdminResponse
 
 router = APIRouter(prefix="/api/superadmin", tags=["SuperAdmin"])
 
@@ -36,7 +36,7 @@ async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSes
         total_appointments=appts, total_guides_sold=purchases, total_income=total_money
     )
 
-@router.get("/doctors", response_model=List[DoctorResponse])
+@router.get("/doctors", response_model=List[DoctorAdminResponse])
 async def get_all_doctors_admin(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if current_user.role != "superadmin": raise HTTPException(403)
     res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"])).order_by(User.id))

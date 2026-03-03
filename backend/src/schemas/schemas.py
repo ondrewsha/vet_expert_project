@@ -68,9 +68,15 @@ class DoctorProfileResponse(BaseModel):
     photo_url: Optional[str] = None
     work_days: Optional[str] = None
     is_active: bool = True
+    telemost_link: Optional[str] = None # Ссылку полезно видеть и клиенту (теоретически)
 
     class Config:
         from_attributes = True
+
+# Полная инфа для Админа (с паролями)
+class DoctorProfileAdminResponse(DoctorProfileResponse):
+    yandex_email: Optional[str] = None
+    yandex_password: Optional[str] = None
 
 class DoctorBasicInfo(BaseModel):
     id: int
@@ -79,10 +85,22 @@ class DoctorBasicInfo(BaseModel):
     class Config:
         from_attributes = True
 
+# Обычный ответ (для списка записи)
 class DoctorResponse(BaseModel):
     id: int
     full_name: Optional[str] = None
+    phone: Optional[str] = None # Добавим телефон, может пригодиться
     doctor_profile: Optional[DoctorProfileResponse] = None
+
+    class Config:
+        from_attributes = True
+
+# Ответ для Админки (с полным профилем)
+class DoctorAdminResponse(BaseModel):
+    id: int
+    full_name: Optional[str] = None
+    phone: str
+    doctor_profile: Optional[DoctorProfileAdminResponse] = None
 
     class Config:
         from_attributes = True
