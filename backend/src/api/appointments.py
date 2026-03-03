@@ -25,6 +25,10 @@ CONSULTATION_DURATION_MINUTES = 60
 class RatingUpdate(BaseModel):
     rating: int
 
+class BlockSlotRequest(BaseModel):
+    start_time: datetime
+    duration_minutes: int = 60
+
 @router.get("/doctors", response_model=List[DoctorResponse])
 async def get_doctors(db: AsyncSession = Depends(get_db)):
     """Получить список всех врачей для отображения на странице записи"""
@@ -336,3 +340,58 @@ async def cancel_appointment(appt_id: int, current_user: User = Depends(get_curr
     await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg)
     
     return {"status": "ok", "message": "Запись отменена, средства вернулись на баланс."}
+
+@router.post("/block-slot")
+async def block_slot(
+    req: BlockSlotRequest, 
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    """Врач блокирует слот (создает техническую запись)"""
+    if current_user.role not in["doctor", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Только для врачей")
+
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    start_time_tz = req.start_time.replace(tzinfo=None).replace(tzinfo=moscow_tz)
+    end_time = start_time_tz + timedelta(minutes=req.duration_minutes)
+
+    # 1. Создаем запись
+    new_appt = Appointment(
+        user_id=current_user.id, 
+        doctor_id=current_user.id,
+        start_time=start_time_tz,
+        end_time=end_time,
+        status="completed", 
+        pet_info="🔒 ТЕХНИЧЕСКИЙ ПЕРЕРЫВ (Заблокировано врачом)",
+        meet_link=None
+    )
+    db.add(new_appt)
+    await db.commit()
+
+    # 2. ИСПРАВЛЕНИЕ: Явно достаем профиль врача из БД асинхронно
+    prof_res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == current_user.id))
+    doc_prof = prof_res.scalars().first()
+
+    # 3. Отправляем в Яндекс, если есть профиль и креды
+    if doc_prof and doc_prof.yandex_email:
+        # У нас уже импортирована create_yandex_event
+        from src.services.yandex_calendar_service import create_yandex_event
+        yandex_url = create_yandex_event(
+            start_time=start_time_tz,
+            summary="⛔ НЕ ЗАПИСЫВАТЬ (Блок)",
+            description="Слот заблокирован через сайт ВетЭксперт",
+            email=doc_prof.yandex_email,
+            password=doc_prof.yandex_password
+        )
+        
+        # Если у нас есть функция удаления (и мы сохраняем URL), то сохраним URL
+        if yandex_url:
+            from sqlalchemy import update
+            await db.execute(
+                update(Appointment)
+                .where(Appointment.id == new_appt.id)
+                .values(google_event_id=yandex_url)
+            )
+            await db.commit()
+
+    return {"status": "ok", "message": "Время заблокировано"}

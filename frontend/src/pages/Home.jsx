@@ -56,14 +56,6 @@ export default function Home() {
                 <p className="text-gray-500 text-sm mb-4 line-clamp-2">
                   {guide.description || "Подробное руководство."}
                 </p>
-
-                {/* Бесплатный фрагмент (Сниппет) */}
-                {guide.free_snippet && (
-                  <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200 text-sm text-gray-700 italic relative">
-                    <span className="absolute -top-3 left-4 bg-white px-2 text-xs font-bold text-emerald-600 uppercase tracking-wider">Фрагмент</span>
-                    "{guide.free_snippet}"
-                  </div>
-                )}
                 
                 {/* Кнопки внизу */}
                 <div className="mt-auto">
