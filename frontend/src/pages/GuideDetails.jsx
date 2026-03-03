@@ -101,8 +101,18 @@ export default function GuideDetails() {
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden mb-12">
         <div className="md:flex">
           {/* Левая часть - Обложка */}
-          <div className="md:w-1/3 bg-linear-to-br from-emerald-100 to-teal-50 flex items-center justify-center p-12">
-            <Book className="w-32 h-32 text-emerald-400 drop-shadow-md" />
+          <div className="md:w-1/3 bg-gray-50 flex items-center justify-center relative overflow-hidden">
+            {guide.cover_image_id ? (
+               <img 
+                 src={`/api/guides/${guide.id}/cover`} 
+                 alt={guide.title} 
+                 className="w-full h-full object-cover"
+               />
+            ) : (
+              <div className="w-full h-full bg-linear-to-br from-emerald-100 to-teal-50 flex items-center justify-center p-12">
+                <Book className="w-32 h-32 text-emerald-400 drop-shadow-md" />
+              </div>
+            )}
           </div>
           
           {/* Правая часть - Инфо */}

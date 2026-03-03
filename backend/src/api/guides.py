@@ -51,6 +51,7 @@ async def get_guide(
         free_snippet=guide.free_snippet,
         price=guide.price,
         mongo_file_id=guide.mongo_file_id,
+        cover_image_id=guide.cover_image_id,
         is_active=guide.is_active,
         created_at=guide.created_at,
         author_id=guide.author_id,
@@ -83,6 +84,7 @@ async def create_guide(
         price: float = Form(...),
         free_snippet: str = Form(None),
         file: UploadFile = File(...),
+        cover: UploadFile = File(None),
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
     ):
@@ -94,10 +96,15 @@ async def create_guide(
         source=file.file,
         metadata={"content_type": file.content_type}
     )
+
+    cover_id = None
+    if cover:
+        cover_id = await fs.upload_from_stream(filename=cover.filename, source=cover.file, metadata={"content_type": cover.content_type})
+        cover_id = str(cover_id)
     
     new_guide = Guide(
         title=title, description=description, free_snippet=free_snippet,
-        price=price, mongo_file_id=str(file_id), author_id=current_user.id
+        price=price, mongo_file_id=str(file_id), author_id=current_user.id, cover_image_id=cover_id
     )
     db.add(new_guide)
     await db.commit()
@@ -183,3 +190,65 @@ async def create_comment(
     response.user_name = current_user.full_name or current_user.phone
     
     return response
+
+# --- ПОЛУЧЕНИЕ ОБЛОЖКИ ГАЙДА (Открытый доступ) ---
+@router.get("/{guide_id}/cover")
+async def get_guide_cover(guide_id: int, db: AsyncSession = Depends(get_db)):
+    guide = await db.get(Guide, guide_id)
+    if not guide or not guide.cover_image_id:
+        # Если обложки нет, возвращаем дефолтную картинку (можно просто 404, а фронт покажет иконку)
+        raise HTTPException(status_code=404, detail="Обложка не найдена")
+
+    from bson import ObjectId
+    try:
+        grid_out = await fs.open_download_stream(ObjectId(guide.cover_image_id))
+    except Exception:
+        raise HTTPException(status_code=404, detail="Файл обложки физически отсутствует")
+
+    return StreamingResponse(
+        grid_out, 
+        media_type="image/jpeg", # GridFS сам отдаст бинарник, браузер поймет
+    )
+
+# --- РЕДАКТИРОВАНИЕ ГАЙДА ---
+@router.patch("/{guide_id}", response_model=GuideResponse)
+async def update_guide(
+        guide_id: int,
+        title: str = Form(None),
+        description: str = Form(None),
+        price: float = Form(None),
+        free_snippet: str = Form(None),
+        file: UploadFile = File(None),  # Если передали - обновляем PDF
+        cover: UploadFile = File(None), # Если передали - обновляем обложку
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+    ):
+    # Ищем гайд
+    guide = await db.get(Guide, guide_id)
+    if not guide:
+        raise HTTPException(status_code=404)
+        
+    # Проверяем права (редактировать может автор или суперадмин)
+    if current_user.role != "superadmin" and guide.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Вы можете редактировать только свои гайды")
+
+    # Обновляем текстовые поля
+    if title: guide.title = title
+    if description: guide.description = description
+    if price is not None: guide.price = price
+    if free_snippet is not None: guide.free_snippet = free_snippet
+
+    # Если загрузили новый PDF
+    if file:
+        file_id = await fs.upload_from_stream(filename=file.filename, source=file.file, metadata={"content_type": file.content_type})
+        guide.mongo_file_id = str(file_id)
+        # (По-хорошему тут надо удалить старый файл из MongoDB, но для простоты пока оставим как историю)
+
+    # Если загрузили новую обложку
+    if cover:
+        cover_id = await fs.upload_from_stream(filename=cover.filename, source=cover.file, metadata={"content_type": cover.content_type})
+        guide.cover_image_id = str(cover_id)
+
+    await db.commit()
+    await db.refresh(guide)
+    return guide

@@ -1,20 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
-import { BookOpen, UploadCloud, Loader2, CheckCircle, Calendar, Clock, Lock, CheckSquare, Settings, Save } from 'lucide-react';
+import { BookOpen, UploadCloud, Loader2, Calendar, Clock, Lock, CheckSquare, Settings, Save, Edit3, X, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DoctorDashboard() {
   const { user } = useAuthStore();
-  const [activeTab, setActiveTab] = useState('schedule'); // 'guides' | 'schedule' | 'settings'
+  const [activeTab, setActiveTab] = useState('schedule'); 
 
   // --- Стейты Гайда ---
-  const[title, setTitle] = useState('');
+  const [myGuides, setMyGuides] = useState([]); 
+  const [editingGuideId, setEditingGuideId] = useState(null); 
+  
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const[snippet, setSnippet] = useState('');
+  const [snippet, setSnippet] = useState('');
   const [price, setPrice] = useState('');
-  const[file, setFile] = useState(null);
-  // const [cover, setCover] = useState(null); // Для загрузки обложки (пока не используется, задел на будущее)
+  const [file, setFile] = useState(null);
+  const [cover, setCover] = useState(null);
   const [loadingGuide, setLoadingGuide] = useState(false);
 
   // --- Стейты Умного Расписания ---
@@ -23,7 +26,7 @@ export default function DoctorDashboard() {
   const defaultDate = new Date(today.getTime() - offset).toISOString().split('T')[0];
   
   const [scheduleDate, setScheduleDate] = useState(defaultDate);
-  const[scheduleSlots, setScheduleSlots] = useState([]); 
+  const [scheduleSlots, setScheduleSlots] = useState([]); 
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const[savingSchedule, setSavingSchedule] = useState(false);
   
@@ -31,60 +34,65 @@ export default function DoctorDashboard() {
   const [toUnblock, setToUnblock] = useState([]);
 
   // --- Стейты Настроек Врача ---
-  const [workDays, setWorkDays] = useState([0, 1, 2, 3, 4, 5, 6]); // 0=Пн, 6=Вс. По умолчанию все дни.
+  const [workDays, setWorkDays] = useState([0, 1, 2, 3, 4, 5, 6]); 
   const [loadingSettings, setLoadingSettings] = useState(false);
-  const[savingSettings, setSavingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // --- ЭФФЕКТЫ ---
   useEffect(() => {
+    if (user?.role !== 'doctor' && user?.role !== 'superadmin') return;
+
+    if (activeTab === 'guides') {
+      apiClient.get('/guides').then(res => {
+          const mine = res.data.filter(g => user.role === 'superadmin' || g.author_id === user.id);
+          setMyGuides(mine);
+      });
+    }
+
     if (activeTab === 'schedule') {
-      const fetchSchedule = async () => {
-        setLoadingSchedule(true);
-        setToBlock([]); 
-        setToUnblock([]);
-        try {
-          const res = await apiClient.get(`/appointments/doctor/schedule?target_date=${scheduleDate}`);
-          setScheduleSlots(res.data);
-        } catch (e) {
-          toast.error("Ошибка загрузки расписания");
-          console.error(e);
-        } finally {
-          setLoadingSchedule(false);
-        }
-      };
-      fetchSchedule();
+        const fetchSchedule = async () => {
+            setLoadingSchedule(true);
+            setToBlock([]); 
+            setToUnblock([]);
+            try {
+              const res = await apiClient.get(`/appointments/doctor/schedule?target_date=${scheduleDate}`);
+              setScheduleSlots(res.data);
+            } catch (e) {
+              toast.error("Ошибка загрузки расписания");
+              console.error("Ошибка загрузки расписания", e);
+            } finally { 
+              setLoadingSchedule(false); 
+            }
+          };
+          fetchSchedule();
     }
     
     if (activeTab === 'settings') {
-      const fetchSettings = async () => {
-        setLoadingSettings(true);
-        try {
-          // Предполагаем, что бэкенд отдаст нам профиль по /users/me
-          const res = await apiClient.get('/users/me');
-          // Если мы прокинем профиль в ответ /users/me, можно будет брать дни оттуда. 
-          // Пока что мы сделаем заглушку, а потом обновим бэк.
-          // Временно будем считать, что дни хранятся в user.doctor_profile.work_days
-          const docProfile = res.data.doctor_profile;
-          if (docProfile && docProfile.work_days) {
-              setWorkDays(docProfile.work_days.split(',').map(Number));
-          }
-        } catch (e) {
-          toast.error("Ошибка загрузки настроек");
-          console.error(e);
-        } finally {
-          setLoadingSettings(false);
-        }
-      };
-      fetchSettings();
+        const fetchSettings = async () => {
+            setLoadingSettings(true);
+            try {
+              const res = await apiClient.get('/users/me');
+              const docProfile = res.data.doctor_profile;
+              if (docProfile && docProfile.work_days) {
+                  setWorkDays(docProfile.work_days.split(',').map(Number));
+              }
+            } catch (e) {
+              toast.error("Ошибка загрузки настроек");
+              console.error("Ошибка загрузки настроек", e);
+            } finally { 
+              setLoadingSettings(false); 
+            }
+          };
+          fetchSettings();
     }
-  },[scheduleDate, activeTab]);
+  }, [scheduleDate, activeTab, user]);
 
   // Защита роута
   if (user?.role !== 'doctor' && user?.role !== 'superadmin') {
     return <div className="text-center py-20 text-red-500 font-bold">Доступ запрещен</div>;
   }
 
-  // --- ФУНКЦИИ РАСПИСАНИЯ ---
+  // --- ЛОГИКА РАСПИСАНИЯ ---
   const toggleSlot = (time, originalState) => {
     if (originalState === 'booked' || originalState === 'yandex') return;
 
@@ -133,75 +141,22 @@ export default function DoctorDashboard() {
       setToUnblock([]);
     } catch (e) {
       toast.error("Ошибка при сохранении расписания.");
-      console.error(e);
+      console.error("Ошибка при сохранении расписания", e);
     } finally {
       setSavingSchedule(false);
     }
   };
 
-  // --- ФУНКЦИИ ГАЙДОВ ---
-  const handleGuideSubmit = async (e) => {
-    e.preventDefault();
-    if (!file) return toast.error("Выберите PDF файл");
-
-    setLoadingGuide(true);
-    const formData = new FormData();
-    formData.append('title', title);
-    formData.append('description', description);
-    if(snippet) formData.append('free_snippet', snippet);
-    formData.append('price', price);
-    formData.append('file', file);
-    // if (cover) formData.append('cover', cover); // На будущее
-
-    try {
-      await apiClient.post('/guides', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      toast.success("Гайд опубликован!");
-      setTitle(''); setDescription(''); setSnippet(''); setPrice(''); setFile(null);
-    } catch (err) {
-      toast.error("Ошибка при загрузке гайда");
-      console.error(err);
-    } finally {
-      setLoadingGuide(false);
-    }
-  };
-
-  // --- ФУНКЦИИ НАСТРОЕК ---
-  const toggleWorkDay = (dayIndex) => {
-      if (workDays.includes(dayIndex)) {
-          setWorkDays(workDays.filter(d => d !== dayIndex));
-      } else {
-          setWorkDays([...workDays, dayIndex].sort());
-      }
-  };
-
-  const handleSaveSettings = async () => {
-      setSavingSettings(true);
-      try {
-          await apiClient.patch('/users/doctor/settings', {
-              work_days: workDays.join(',')
-          });
-          toast.success("Настройки сохранены!");
-      } catch (e) {
-          toast.error("Ошибка сохранения настроек");
-          console.error(e);
-      } finally {
-          setSavingSettings(false);
-      }
-  };
-
-  // Вспомогательная функция для рендера карточек слотов
+  // Вспомогательная функция рендера слотов
   const renderSlot = (slot) => {
     const isPendingBlock = toBlock.includes(slot.time);
     const isPendingUnblock = toUnblock.includes(slot.time);
     
-    // Вычисляем ИТОГОВЫЙ ВИЗУАЛЬНЫЙ статус слота
     let visualState = slot.state;
     if (isPendingBlock) visualState = 'blocked_preview';
     if (isPendingUnblock) visualState = 'free_preview';
 
-    let bgClass = "bg-gray-50 border-gray-200 text-gray-700"; // free
+    let bgClass = "bg-gray-50 border-gray-200 text-gray-700"; 
     let icon = null;
     let label = "Свободно";
     let cursor = "cursor-pointer hover:border-primary hover:bg-emerald-50";
@@ -242,11 +197,83 @@ export default function DoctorDashboard() {
     );
   };
 
+  // --- ЛОГИКА НАСТРОЕК ---
+  const toggleWorkDay = (dayIndex) => {
+      if (workDays.includes(dayIndex)) {
+          setWorkDays(workDays.filter(d => d !== dayIndex));
+      } else {
+          setWorkDays([...workDays, dayIndex].sort());
+      }
+  };
+
+  const handleSaveSettings = async () => {
+      setSavingSettings(true);
+      try {
+          await apiClient.patch('/users/doctor/settings', {
+              work_days: workDays.join(',')
+          });
+          toast.success("Настройки сохранены!");
+      } catch (e) {
+          toast.error("Ошибка сохранения настроек");
+          console.error("Ошибка сохранения настроек", e);
+      } finally {
+          setSavingSettings(false);
+      }
+  };
+
+  // --- ЛОГИКА ГАЙДОВ ---
+  const startEditing = (guide) => {
+      setEditingGuideId(guide.id);
+      setTitle(guide.title);
+      setDescription(guide.description || '');
+      setSnippet(guide.free_snippet || '');
+      setPrice(guide.price);
+      setFile(null); 
+      setCover(null);
+  };
+
+  const cancelEditing = () => {
+      setEditingGuideId(null);
+      setTitle(''); setDescription(''); setSnippet(''); setPrice(''); setFile(null); setCover(null);
+  };
+
+  const handleGuideSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingGuideId && !file) return toast.error("Для нового гайда обязательно выберите PDF файл");
+
+    setLoadingGuide(true);
+    const formData = new FormData();
+    if (title) formData.append('title', title);
+    if (description) formData.append('description', description);
+    if (snippet) formData.append('free_snippet', snippet);
+    if (price) formData.append('price', price);
+    if (file) formData.append('file', file);
+    if (cover) formData.append('cover', cover); 
+
+    try {
+      if (editingGuideId) {
+          await apiClient.patch(`/guides/${editingGuideId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          toast.success("Гайд успешно обновлен!");
+      } else {
+          await apiClient.post('/guides', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          toast.success("Новый гайд опубликован!");
+      }
+      
+      cancelEditing();
+      const res = await apiClient.get('/guides');
+      setMyGuides(res.data.filter(g => user.role === 'superadmin' || g.author_id === user.id));
+
+    } catch (err) {
+      toast.error("Ошибка при сохранении гайда");
+      console.error("Ошибка при сохранении гайда", err);
+    } finally {
+      setLoadingGuide(false);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
-      <h1 className="text-3xl font-extrabold text-gray-900 mb-8 flex items-center gap-3">
-        Панель специалиста
-      </h1>
+      <h1 className="text-3xl font-extrabold text-gray-900 mb-8">Панель специалиста</h1>
 
       {/* ТАБЫ */}
       <div className="flex flex-wrap gap-2 bg-gray-100 p-1 rounded-xl mb-8 w-fit">
@@ -257,7 +284,7 @@ export default function DoctorDashboard() {
           <Settings className="w-4 h-4"/> Настройки графика
         </button>
         <button onClick={() => setActiveTab('guides')} className={`px-5 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'guides' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
-          <BookOpen className="w-4 h-4"/> Публикация гайдов
+          <BookOpen className="w-4 h-4"/> Управление гайдами
         </button>
       </div>
 
@@ -352,38 +379,100 @@ export default function DoctorDashboard() {
 
       {/* --- ВКЛАДКА 3: ГАЙДЫ --- */}
       {activeTab === 'guides' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 animate-in fade-in">
-          {/* ... Код формы гайда (остался как в предыдущем ответе) ... */}
-          <h2 className="text-xl font-bold mb-6">Новый гайд</h2>
-          <form onSubmit={handleGuideSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Название</label>
-                <input type="text" required value={title} onChange={e => setTitle(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Цена (₽)</label>
-                <input type="number" required min="0" value={price} onChange={e => setPrice(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none" />
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
+            
+            {/* СПИСОК МОИХ ГАЙДОВ */}
+            <div className="lg:col-span-1 space-y-4">
+                <h2 className="text-xl font-bold mb-4">Мои гайды</h2>
+                <button onClick={cancelEditing} className={`w-full py-3 rounded-xl border-2 border-dashed font-medium transition ${!editingGuideId ? 'border-primary bg-emerald-50 text-primary' : 'border-gray-300 text-gray-500 hover:border-primary hover:text-primary'}`}>
+                    + Создать новый
+                </button>
+                
+                {myGuides.map(g => (
+                    <div key={g.id} className={`p-4 rounded-xl border-2 transition ${editingGuideId === g.id ? 'border-primary bg-white shadow-md' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
+                        <div className="font-bold text-gray-900 mb-1 leading-tight">{g.title}</div>
+                        <div className="text-sm text-gray-500 mb-3">{g.price} ₽</div>
+                        <button onClick={() => startEditing(g)} className="text-sm flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium bg-blue-50 px-3 py-1.5 rounded-lg w-fit">
+                            <Edit3 className="w-4 h-4" /> Редактировать
+                        </button>
+                    </div>
+                ))}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
-              <textarea required rows="3" value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none"></textarea>
+
+            {/* ФОРМА СОЗДАНИЯ / РЕДАКТИРОВАНИЯ */}
+            <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 relative">
+                {editingGuideId && (
+                    <button onClick={cancelEditing} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 bg-gray-100 rounded-full p-1 transition">
+                        <X className="w-5 h-5" />
+                    </button>
+                )}
+                
+                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                    {editingGuideId ? <><Edit3 className="w-5 h-5 text-blue-500"/> Редактирование гайда</> : <><UploadCloud className="w-5 h-5 text-primary"/> Новый гайд</>}
+                </h2>
+
+                <form onSubmit={handleGuideSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Название</label>
+                            <input type="text" required value={title} onChange={e => setTitle(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none transition" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Цена (₽)</label>
+                            <input type="number" required min="0" value={price} onChange={e => setPrice(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none transition" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+                        <textarea required rows="3" value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none transition"></textarea>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Фрагмент (Тизер)</label>
+                        <textarea rows="3" value={snippet} onChange={e => setSnippet(e.target.value)} placeholder="Для предпросмотра на странице гайда..." className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none bg-emerald-50/30 transition"></textarea>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        {/* ФАЙЛ PDF */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Полная версия (PDF) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}
+                            </label>
+                            <div className="flex items-center justify-center w-full">
+                                <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition ${file ? 'border-primary bg-emerald-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
+                                    <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-2">
+                                        <UploadCloud className={`w-6 h-6 mb-1 ${file ? 'text-primary' : 'text-gray-400'}`} />
+                                        <p className="text-xs font-medium text-gray-500 line-clamp-1">{file ? file.name : "Выбрать PDF"}</p>
+                                    </div>
+                                    <input type="file" accept="application/pdf" className="hidden" onChange={e => setFile(e.target.files[0])} />
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* ОБЛОЖКА JPG/PNG */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Обложка (Картинка) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}
+                            </label>
+                            <div className="flex items-center justify-center w-full">
+                                <label className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl cursor-pointer transition ${cover ? 'border-blue-400 bg-blue-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
+                                    <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-2">
+                                        <ImageIcon className={`w-6 h-6 mb-1 ${cover ? 'text-blue-500' : 'text-gray-400'}`} />
+                                        <p className="text-xs font-medium text-gray-500 line-clamp-1">{cover ? cover.name : "Загрузить фото"}</p>
+                                    </div>
+                                    <input type="file" accept="image/*" className="hidden" onChange={e => setCover(e.target.files[0])} />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" disabled={loadingGuide} className={`w-full text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition disabled:opacity-50 ${editingGuideId ? 'bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20' : 'bg-primary hover:bg-emerald-600 shadow-md shadow-emerald-500/20'}`}>
+                        {loadingGuide ? <Loader2 className="w-5 h-5 animate-spin" /> : (editingGuideId ? "Сохранить изменения" : "Опубликовать гайд")}
+                    </button>
+                </form>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Фрагмент (Тизер)</label>
-              <textarea rows="3" value={snippet} onChange={e => setSnippet(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none bg-emerald-50/30"></textarea>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">PDF Файл</label>
-              <input type="file" accept="application/pdf" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" onChange={e => setFile(e.target.files[0])} />
-            </div>
-            <button type="submit" disabled={loadingGuide} className="w-full bg-primary text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 transition disabled:opacity-50">
-              {loadingGuide ? <Loader2 className="w-5 h-5 animate-spin" /> : "Опубликовать"}
-            </button>
-          </form>
         </div>
       )}
+      
     </div>
   );
 }

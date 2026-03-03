@@ -41,9 +41,20 @@ export default function Home() {
           {guides.map((guide) => (
             <div key={guide.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition flex flex-col">
               {/* Верхняя часть карточки (Обложка) */}
-              <div className="h-48 bg-linear-to-br from-emerald-100 to-teal-50 flex items-center justify-center relative">
-                <Book className="w-16 h-16 text-emerald-300" />
-                <div className="absolute top-4 right-4 bg-white px-3 py-1 rounded-full text-sm font-bold text-gray-700 shadow-sm">
+              <div className="h-48 bg-gray-100 flex items-center justify-center relative overflow-hidden">
+                {guide.cover_image_id ? (
+                  <img 
+                    src={`/api/guides/${guide.id}/cover`} 
+                    alt={guide.title} 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-linear-to-br from-emerald-100 to-teal-50 flex items-center justify-center">
+                    <Book className="w-16 h-16 text-emerald-300" />
+                  </div>
+                )}
+                
+                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1 rounded-full text-sm font-bold text-gray-800 shadow-sm">
                   {guide.price} ₽
                 </div>
               </div>
