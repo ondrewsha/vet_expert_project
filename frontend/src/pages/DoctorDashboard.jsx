@@ -1,40 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
-import { BookOpen, UploadCloud, Loader2, Calendar, Clock, Lock, CheckSquare, Settings, Save, Edit3, X, Image as ImageIcon, CheckCircle } from 'lucide-react';
+import { BookOpen, UploadCloud, Loader2, CheckCircle, Calendar, Clock, Lock, CheckSquare, Settings, Save, Edit3, X, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DoctorDashboard() {
-  const { user } = useAuthStore();
+  const { user, checkAuth } = useAuthStore();
   const [activeTab, setActiveTab] = useState('schedule'); 
-
-  // --- ЛИМИТЫ ДЛЯ ГАЙДОВ ---
-  const MAX_DESC_LEN = 500;
-  const MAX_SNIPPET_LEN = 500;
 
   // --- Стейты Гайда ---
   const [myGuides, setMyGuides] = useState([]); 
   const [editingGuideId, setEditingGuideId] = useState(null); 
-  
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [snippet, setSnippet] = useState('');
   const [price, setPrice] = useState('');
   const [file, setFile] = useState(null);
   const [cover, setCover] = useState(null);
-  
-  // Для отображения уже загруженных файлов при редактировании
   const [existingCoverUrl, setExistingCoverUrl] = useState(null);
   const [existingPdf, setExistingPdf] = useState(false);
   const [existingPdfName, setExistingPdfName] = useState(null);
-  
   const [loadingGuide, setLoadingGuide] = useState(false);
 
   // --- Стейты Умного Расписания ---
   const today = new Date();
   const offset = today.getTimezoneOffset() * 60000;
   const defaultDate = new Date(today.getTime() - offset).toISOString().split('T')[0];
-  
   const [scheduleDate, setScheduleDate] = useState(defaultDate);
   const [scheduleSlots, setScheduleSlots] = useState([]); 
   const [loadingSchedule, setLoadingSchedule] = useState(false);
@@ -51,85 +42,79 @@ export default function DoctorDashboard() {
   const [myPhoto, setMyPhoto] = useState(null);
   const [myPhotoUrl, setMyPhotoUrl] = useState(null);
 
+  // ЛИМИТЫ
+  const MAX_DESC_LEN = 500;
+  const MAX_SNIPPET_LEN = 500;
+
+  // --- ФУНКЦИИ ЗАГРУЗКИ ДАННЫХ ---
+  
+  const fetchMyGuides = useCallback(() => {
+    apiClient.get('/guides').then(res => {
+        const mine = res.data.filter(g => user.role === 'superadmin' || g.author_id === user.id);
+        setMyGuides(mine);
+    });
+  }, [user]);
+
+  const fetchSchedule = useCallback(async () => {
+    setLoadingSchedule(true);
+    setToBlock([]); 
+    setToUnblock([]);
+    try {
+      const res = await apiClient.get(`/appointments/doctor/schedule?target_date=${scheduleDate}`);
+      setScheduleSlots(res.data);
+    } catch (e) {
+      toast.error("Ошибка загрузки расписания");
+      console.error("Ошибка загрузки расписания", e);
+    } finally { 
+      setLoadingSchedule(false); 
+    }
+  }, [scheduleDate]);
+
+  const fetchSettings = useCallback(async () => {
+    setLoadingSettings(true);
+    try {
+      const res = await apiClient.get('/users/me');
+      const docProfile = res.data.doctor_profile;
+      if (docProfile) {
+          if (docProfile.work_days) setWorkDays(docProfile.work_days.split(',').map(Number));
+          setMyDesc(docProfile.description || '');
+          setMyPhotoUrl(docProfile.photo_url ? `/api/users/${res.data.id}/photo` : null);
+      }
+    } catch (e) {
+      toast.error("Ошибка загрузки настроек");
+      console.error("Ошибка загрузки настроек", e);
+    } finally { 
+      setLoadingSettings(false); 
+    }
+  }, []);
+
   // --- ЭФФЕКТЫ ---
   useEffect(() => {
     if (user?.role !== 'doctor' && user?.role !== 'superadmin') return;
+    if (activeTab === 'guides') fetchMyGuides();
+    if (activeTab === 'schedule') fetchSchedule();
+    if (activeTab === 'settings') fetchSettings();
+  }, [activeTab, fetchSchedule, fetchSettings, fetchMyGuides, user]);
 
-    if (activeTab === 'guides') {
-      apiClient.get('/guides').then(res => {
-          const mine = res.data.filter(g => user.role === 'superadmin' || g.author_id === user.id);
-          setMyGuides(mine);
-      });
-    }
-
-    if (activeTab === 'schedule') {
-        const fetchSchedule = async () => {
-          setLoadingSchedule(true);
-          setToBlock([]); 
-          setToUnblock([]);
-          try {
-            const res = await apiClient.get(`/appointments/doctor/schedule?target_date=${scheduleDate}`);
-            setScheduleSlots(res.data);
-          } catch (e) {
-            toast.error("Ошибка загрузки расписания");
-            console.error("Ошибка загрузки расписания", e);
-          } finally { 
-            setLoadingSchedule(false); 
-          }
-        };
-        fetchSchedule();
-    }
-    
-    if (activeTab === 'settings') {
-        const fetchSettings = async () => {
-          setLoadingSettings(true);
-          try {
-            const res = await apiClient.get('/users/me');
-            const docProfile = res.data.doctor_profile;
-            if (docProfile) {
-                if (docProfile.work_days) setWorkDays(docProfile.work_days.split(',').map(Number));
-                setMyDesc(docProfile.description || '');
-                setMyPhotoUrl(docProfile.photo_url ? `/api/users/${res.data.id}/photo` : null);
-            }
-          } catch (e) {
-            toast.error("Ошибка загрузки настроек");
-            console.error("Ошибка загрузки настроек", e);
-          } finally { 
-            setLoadingSettings(false); 
-          }
-        };
-        fetchSettings();
-    }
-  }, [scheduleDate, activeTab, user]);
-
-  // Защита роута
   if (user?.role !== 'doctor' && user?.role !== 'superadmin') {
     return <div className="text-center py-20 text-red-500 font-bold">Доступ запрещен</div>;
   }
 
-  // --- ЛОГИКА РАСПИСАНИЯ ---
+  // ... ЛОГИКА РАСПИСАНИЯ ...
   const toggleSlot = (time, originalState) => {
     if (originalState === 'booked' || originalState === 'yandex') return;
-
     if (originalState === 'free') {
-      if (toBlock.includes(time)) {
-        setToBlock(toBlock.filter(t => t !== time)); 
-      } else {
-        setToBlock([...toBlock, time]);
-      }
+      if (toBlock.includes(time)) setToBlock(toBlock.filter(t => t !== time)); 
+      else setToBlock([...toBlock, time]);
     } else if (originalState === 'blocked') {
-      if (toUnblock.includes(time)) {
-        setToUnblock(toUnblock.filter(t => t !== time));
-      } else {
-        setToUnblock([...toUnblock, time]);
-      }
+      if (toUnblock.includes(time)) setToUnblock(toUnblock.filter(t => t !== time));
+      else setToUnblock([...toUnblock, time]);
     }
   };
 
   const toggleWholeDay = () => {
     const freeSlots = scheduleSlots.filter(s => s.state === 'free').map(s => s.time);
     const blockedSlots = scheduleSlots.filter(s => s.state === 'blocked').map(s => s.time);
-    
     if (toBlock.length < freeSlots.length) {
       setToBlock(freeSlots);
       setToUnblock(blockedSlots); 
@@ -149,11 +134,7 @@ export default function DoctorDashboard() {
         to_unblock: toUnblock
       });
       toast.success("Расписание обновлено!");
-      
-      const res = await apiClient.get(`/appointments/doctor/schedule?target_date=${scheduleDate}`);
-      setScheduleSlots(res.data);
-      setToBlock([]);
-      setToUnblock([]);
+      fetchSchedule(); // Обновляем сетку
     } catch (e) {
       toast.error("Ошибка при сохранении расписания.");
       console.error("Ошибка при сохранении расписания", e);
@@ -165,7 +146,6 @@ export default function DoctorDashboard() {
   const renderSlot = (slot) => {
     const isPendingBlock = toBlock.includes(slot.time);
     const isPendingUnblock = toUnblock.includes(slot.time);
-    
     let visualState = slot.state;
     if (isPendingBlock) visualState = 'blocked_preview';
     if (isPendingUnblock) visualState = 'free_preview';
@@ -198,14 +178,8 @@ export default function DoctorDashboard() {
     }
 
     return (
-        <div 
-            key={slot.time} 
-            onClick={() => toggleSlot(slot.time, slot.state)}
-            className={`p-3 rounded-xl border transition-all flex flex-col items-center justify-center text-center select-none ${bgClass} ${cursor} h-24`}
-        >
-            <div className="font-bold text-lg mb-1 flex items-center justify-center gap-1">
-                {icon} {slot.time}
-            </div>
+        <div key={slot.time} onClick={() => toggleSlot(slot.time, slot.state)} className={`p-3 rounded-xl border transition-all flex flex-col items-center justify-center text-center select-none ${bgClass} ${cursor} h-24`}>
+            <div className="font-bold text-lg mb-1 flex items-center justify-center gap-1">{icon} {slot.time}</div>
             <div className="text-xs leading-tight">{label}</div>
         </div>
     );
@@ -213,11 +187,8 @@ export default function DoctorDashboard() {
 
   // --- ЛОГИКА НАСТРОЕК ---
   const toggleWorkDay = (dayIndex) => {
-      if (workDays.includes(dayIndex)) {
-          setWorkDays(workDays.filter(d => d !== dayIndex));
-      } else {
-          setWorkDays([...workDays, dayIndex].sort());
-      }
+      if (workDays.includes(dayIndex)) setWorkDays(workDays.filter(d => d !== dayIndex));
+      else setWorkDays([...workDays, dayIndex].sort());
   };
 
   const handleSaveSettings = async () => {
@@ -225,12 +196,16 @@ export default function DoctorDashboard() {
       const formData = new FormData();
       formData.append('work_days', workDays.join(','));
       if (myDesc) formData.append('description', myDesc);
-      if (myPhoto) formData.append('file', myPhoto); // <--- ФОТО
+      if (myPhoto) formData.append('file', myPhoto); 
 
       try {
           await apiClient.patch('/users/doctor/settings', formData);
           toast.success("Настройки сохранены!");
-          setMyPhoto(null); // Сброс файла
+          setMyPhoto(null); 
+          
+          // ВАЖНО: Обновляем данные на странице и в шапке
+          await checkAuth(); // Обновляет юзера в сторе (аватарку в навбаре)
+          await fetchSettings(); // Обновляет превью в форме
       } catch (e) {
           toast.error("Ошибка сохранения настроек");
           console.error("Ошибка сохранения настроек", e);
@@ -246,9 +221,7 @@ export default function DoctorDashboard() {
       setDescription(guide.description || '');
       setSnippet(guide.free_snippet || '');
       setPrice(guide.price);
-      setFile(null); 
-      setCover(null);
-      // Подтягиваем инфу о существующих файлах
+      setFile(null); setCover(null);
       setExistingCoverUrl(guide.cover_image_id ? `/api/guides/${guide.id}/cover` : null);
       setExistingPdf(!!guide.mongo_file_id);
       setExistingPdfName(guide.pdf_filename || null);
@@ -257,7 +230,7 @@ export default function DoctorDashboard() {
   const cancelEditing = () => {
       setEditingGuideId(null);
       setTitle(''); setDescription(''); setSnippet(''); setPrice(''); setFile(null); setCover(null);
-      setExistingCoverUrl(null); setExistingPdf(false);
+      setExistingCoverUrl(null); setExistingPdf(false); setExistingPdfName(null);
   };
 
   const handleGuideSubmit = async (e) => {
@@ -281,11 +254,8 @@ export default function DoctorDashboard() {
           await apiClient.post('/guides', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
           toast.success("Новый гайд опубликован!");
       }
-      
       cancelEditing();
-      const res = await apiClient.get('/guides');
-      setMyGuides(res.data.filter(g => user.role === 'superadmin' || g.author_id === user.id));
-
+      fetchMyGuides();
     } catch (err) {
       toast.error("Ошибка при сохранении гайда");
       console.error("Ошибка при сохранении гайда", err);
@@ -293,8 +263,7 @@ export default function DoctorDashboard() {
       setLoadingGuide(false);
     }
   };
-
-  // Вспомогательная функция для цвета счетчиков
+  
   const getCounterColor = (current, max) => {
     if (current >= max) return 'text-red-500 font-bold';
     if (current >= max * 0.9) return 'text-amber-500 font-bold';
@@ -308,7 +277,7 @@ export default function DoctorDashboard() {
       {/* ТАБЫ */}
       <div className="flex flex-wrap gap-2 bg-gray-100 p-1 rounded-xl mb-8 w-fit">
         <button onClick={() => setActiveTab('schedule')} className={`px-5 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'schedule' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
-          <Calendar className="w-4 h-4"/> Расписание (Блокировки)
+          <Calendar className="w-4 h-4"/> Расписание
         </button>
         <button onClick={() => setActiveTab('settings')} className={`px-5 py-2.5 rounded-lg text-sm font-medium transition flex items-center gap-2 ${activeTab === 'settings' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
           <Settings className="w-4 h-4"/> Настройки профиля
@@ -350,7 +319,7 @@ export default function DoctorDashboard() {
                   </div>
                   <button onClick={handleSaveSchedule} disabled={savingSchedule} className="bg-gray-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-gray-800 transition flex items-center gap-2 disabled:opacity-50">
                     {savingSchedule ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Сохранить изменения
+                    Сохранить
                   </button>
                 </div>
               )}
@@ -371,7 +340,8 @@ export default function DoctorDashboard() {
                     {/* РЕДАКТИРОВАНИЕ ПРОФИЛЯ */}
                     <div>
                         <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider">Мой профиль</h3>
-                        <textarea rows="3" value={myDesc} onChange={e => setMyDesc(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none mb-3" placeholder="Расскажите о себе пациентам..." />
+                        <textarea rows="3" maxLength={MAX_DESC_LEN} value={myDesc} onChange={e => setMyDesc(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none" placeholder="Расскажите о себе пациентам..." />
+                        <div className={`text-right text-xs mb-3 ${getCounterColor(myDesc.length, MAX_DESC_LEN)}`}>{myDesc.length} / {MAX_DESC_LEN}</div>
                         
                         <label className={`relative flex items-center gap-4 cursor-pointer bg-gray-50 border-2 border-dashed border-gray-200 p-4 rounded-xl hover:bg-gray-100 transition w-full sm:w-fit ${myPhoto || myPhotoUrl ? 'border-primary/50 bg-emerald-50/50' : ''}`}>
                           <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden shrink-0 border border-gray-300">
@@ -383,7 +353,6 @@ export default function DoctorDashboard() {
                                   <ImageIcon className="w-8 h-8 text-gray-400" />
                               )}
                           </div>
-                          
                           <div className="flex flex-col">
                               <span className="text-sm font-bold text-gray-700">
                                   {myPhoto ? "Выбрано новое фото" : myPhotoUrl ? "Сменить фото" : "Загрузить фото"}
@@ -392,27 +361,17 @@ export default function DoctorDashboard() {
                                   {myPhoto ? myPhoto.name : "JPG, PNG до 5MB"}
                               </span>
                           </div>
-                          
                           <input type="file" accept="image/*" className="hidden" onChange={e => setMyPhoto(e.target.files[0])} />
                         </label>
                     </div>
 
                     <hr className="border-gray-100" />
 
-                    {/* ГРАФИК РАБОТЫ */}
                     <div>
                         <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider">Рабочие дни</h3>
                         <div className="flex flex-wrap gap-3">
                             {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dayName, idx) => (
-                                <button
-                                    key={idx}
-                                    onClick={() => toggleWorkDay(idx)}
-                                    className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-lg transition-all ${
-                                        workDays.includes(idx) 
-                                        ? 'bg-primary text-white shadow-md shadow-primary/30 border-2 border-primary' 
-                                        : 'bg-white text-gray-400 border-2 border-dashed border-gray-300 hover:border-gray-400'
-                                    }`}
-                                >
+                                <button key={idx} onClick={() => toggleWorkDay(idx)} className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-lg transition-all ${workDays.includes(idx) ? 'bg-primary text-white shadow-md shadow-primary/30 border-2 border-primary' : 'bg-white text-gray-400 border-2 border-dashed border-gray-300 hover:border-gray-400'}`}>
                                     {dayName}
                                 </button>
                             ))}
@@ -427,7 +386,7 @@ export default function DoctorDashboard() {
                             Для точечного изменения расписания (например, уйти пораньше) используйте вкладку "Блокировки" или создавайте события в Яндекс.Календаре.
                         </p>
                     </div>
-
+                    
                     <button onClick={handleSaveSettings} disabled={savingSettings} className="bg-gray-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-gray-800 transition flex items-center gap-2 disabled:opacity-50">
                         {savingSettings ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                         Сохранить все
@@ -440,14 +399,10 @@ export default function DoctorDashboard() {
       {/* --- ВКЛАДКА 3: ГАЙДЫ --- */}
       {activeTab === 'guides' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
-            
-            {/* СПИСОК МОИХ ГАЙДОВ */}
+            {/* СПИСОК */}
             <div className="lg:col-span-1 space-y-4">
                 <h2 className="text-xl font-bold mb-4">Мои гайды</h2>
-                <button onClick={cancelEditing} className={`w-full py-3 rounded-xl border-2 border-dashed font-medium transition ${!editingGuideId ? 'border-primary bg-emerald-50 text-primary' : 'border-gray-300 text-gray-500 hover:border-primary hover:text-primary'}`}>
-                    + Создать новый
-                </button>
-                
+                <button onClick={cancelEditing} className={`w-full py-3 rounded-xl border-2 border-dashed font-medium transition ${!editingGuideId ? 'border-primary bg-emerald-50 text-primary' : 'border-gray-300 text-gray-500 hover:border-primary hover:text-primary'}`}>+ Создать новый</button>
                 {myGuides.map(g => (
                     <div key={g.id} className={`p-4 rounded-xl border-2 transition ${editingGuideId === g.id ? 'border-primary bg-white shadow-md' : 'border-gray-100 bg-white hover:border-gray-300'}`}>
                         <div className="font-bold text-gray-900 mb-1 leading-tight">{g.title}</div>
@@ -461,12 +416,7 @@ export default function DoctorDashboard() {
 
             {/* ФОРМА СОЗДАНИЯ / РЕДАКТИРОВАНИЯ */}
             <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 relative">
-                {editingGuideId && (
-                    <button onClick={cancelEditing} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 bg-gray-100 rounded-full p-1 transition" title="Отменить редактирование">
-                        <X className="w-5 h-5" />
-                    </button>
-                )}
-                
+                {editingGuideId && <button onClick={cancelEditing} className="absolute top-6 right-6 text-gray-400 hover:text-red-500 bg-gray-100 rounded-full p-1 transition"><X className="w-5 h-5" /></button>}
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                     {editingGuideId ? <><Edit3 className="w-5 h-5 text-blue-500"/> Редактирование гайда</> : <><UploadCloud className="w-5 h-5 text-primary"/> Новый гайд</>}
                 </h2>
@@ -483,42 +433,34 @@ export default function DoctorDashboard() {
                         </div>
                     </div>
                     
-                    {/* Описание с лимитом */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Описание</label>
                         <textarea required rows="4" maxLength={MAX_DESC_LEN} value={description} onChange={e => setDescription(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none transition"></textarea>
-                        <div className={`text-right text-xs mt-1 ${getCounterColor(description.length, MAX_DESC_LEN)}`}>
-                            {description.length} / {MAX_DESC_LEN}
-                        </div>
+                        <div className={`text-right text-xs mt-1 ${getCounterColor(description.length, MAX_DESC_LEN)}`}>{description.length} / {MAX_DESC_LEN}</div>
                     </div>
                     
-                    {/* Фрагмент с лимитом */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Фрагмент (Тизер)</label>
-                        <textarea rows="3" maxLength={MAX_SNIPPET_LEN} value={snippet} onChange={e => setSnippet(e.target.value)} placeholder="Для предпросмотра на странице гайда..." className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none bg-emerald-50/30 transition"></textarea>
-                        <div className={`text-right text-xs mt-1 ${getCounterColor(snippet.length, MAX_SNIPPET_LEN)}`}>
-                            {snippet.length} / {MAX_SNIPPET_LEN}
-                        </div>
+                        <textarea rows="3" maxLength={MAX_SNIPPET_LEN} value={snippet} onChange={e => setSnippet(e.target.value)} placeholder="Для предпросмотра..." className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none bg-emerald-50/30 transition"></textarea>
+                        <div className={`text-right text-xs mt-1 ${getCounterColor(snippet.length, MAX_SNIPPET_LEN)}`}>{snippet.length} / {MAX_SNIPPET_LEN}</div>
                     </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-2">
                         {/* ФАЙЛ PDF */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Полная версия (PDF) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}
-                            </label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Полная версия (PDF) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}</label>
                             <label className={`relative flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${file || existingPdf ? 'border-primary bg-emerald-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
                                 {file ? (
                                     <div className="flex flex-col items-center p-2 text-center z-10">
                                         <UploadCloud className="w-6 h-6 mb-1 text-primary" />
                                         <p className="text-xs font-medium text-gray-700 truncate w-full px-2">{file.name}</p>
+                                        <p className="text-[10px] text-emerald-600 mt-1">Новый файл выбран</p>
                                     </div>
                                 ) : existingPdf ? (
                                     <div className="flex flex-col items-center p-2 text-center z-10">
                                         <CheckCircle className="w-6 h-6 mb-1 text-primary" />
-                                        <p className="text-xs font-bold text-emerald-800 line-clamp-1 w-full px-2">{existingPdfName}</p>
-                                        <p className="text-xs font-bold text-emerald-800">PDF загружен</p>
-                                        <p className="text-[10px] text-emerald-600 mt-1">Нажмите для замены</p>
+                                        <p className="text-xs font-bold text-emerald-800 line-clamp-1 w-full px-2">{existingPdfName || 'PDF загружен'}</p>
+                                        <p className="text-[10px] text-emerald-600 mt-1">Текущий файл (Нажмите для замены)</p>
                                     </div>
                                 ) : (
                                     <div className="flex flex-col items-center p-2 text-center z-10">
@@ -530,23 +472,22 @@ export default function DoctorDashboard() {
                             </label>
                         </div>
 
-                        {/* ОБЛОЖКА JPG/PNG */}
+                        {/* ОБЛОЖКА */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Обложка (Картинка) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}
-                            </label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Обложка {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}</label>
                             <label className={`relative flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${cover || existingCoverUrl ? 'border-blue-400 bg-blue-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
                                 {cover ? (
                                     <div className="flex flex-col items-center z-10 p-2 text-center">
                                         <ImageIcon className="w-6 h-6 mb-1 text-blue-500" />
                                         <p className="text-xs font-medium text-gray-700 truncate w-full px-2">{cover.name}</p>
+                                        <p className="text-[10px] text-blue-600 mt-1">Новое фото</p>
                                     </div>
                                 ) : existingCoverUrl ? (
                                     <>
                                         <img src={existingCoverUrl} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="Cover preview" />
                                         <div className="flex flex-col items-center z-10 p-2 text-center">
                                             <ImageIcon className="w-6 h-6 mb-1 text-blue-600" />
-                                            <p className="text-xs font-bold text-blue-800 bg-white/70 px-2 py-1 rounded">Текущая обложка</p>
+                                            <p className="text-xs font-bold text-blue-800 bg-white/70 px-2 py-1 rounded">Текущая</p>
                                             <p className="text-[10px] text-blue-700 mt-1 bg-white/70 px-2 rounded">Нажмите для замены</p>
                                         </div>
                                     </>
