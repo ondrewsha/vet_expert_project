@@ -46,6 +46,7 @@ class GuideResponse(GuideBase):
     author_id: Optional[int] = None
     created_at: datetime
     cover_image_id: Optional[str] = None
+    mongo_file_id: Optional[str] = None
 
     class Config:
         from_attributes = True

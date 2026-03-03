@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
-import { BookOpen, UploadCloud, Loader2, Calendar, Clock, Lock, CheckSquare, Settings, Save, Edit3, X, Image as ImageIcon } from 'lucide-react';
+import { BookOpen, UploadCloud, Loader2, Calendar, Clock, Lock, CheckSquare, Settings, Save, Edit3, X, Image as ImageIcon, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DoctorDashboard() {
