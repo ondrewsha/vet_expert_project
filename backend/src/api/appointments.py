@@ -7,7 +7,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_, update, delete
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
@@ -444,16 +444,28 @@ async def cancel_appointment(appt_id: int, current_user: User = Depends(get_curr
             delete_yandex_event(appt.google_event_id, prof.yandex_email, prof.yandex_password)
 
     # 3. Возврат средств
-    current_user.unused_consultations += 1
+    # ПРАВИЛО 4 ЧАСОВ
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    now = datetime.now(moscow_tz)
+    
+    # Приводим время встречи к МСК
+    appt_start = appt.start_time.astimezone(moscow_tz) if appt.start_time.tzinfo else appt.start_time.replace(tzinfo=moscow_tz)
+    
+    time_diff = appt_start - now
+    # Если до приема больше 4 часов - возвращаем баланс
+    is_refunded = False
+    if time_diff.total_seconds() >= 4 * 3600:
+        current_user.unused_consultations += 1
+        is_refunded = True
+    
     await db.commit()
     
     # 4. Уведомление
-    moscow_tz = ZoneInfo("Europe/Moscow")
-    dt = appt.start_time.astimezone(moscow_tz) if appt.start_time.tzinfo else appt.start_time
-    msg = f"⚠️ <b>Отмена записи!</b>\nКлиент отменил запись на {dt.strftime('%d.%m %H:%M')}.\nВрач: {appt.doctor.full_name}"
+    refund_text = "Средства возвращены на баланс." if is_refunded else "Поздняя отмена (менее 4ч), средства не возвращены."
+    msg = f"⚠️ <b>Отмена записи!</b>\nКлиент отменил запись на {appt_start.strftime('%d.%m %H:%M')}.\n{refund_text}\nВрач: {appt.doctor.full_name}"
     await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, msg)
     
-    return {"status": "ok", "message": "Запись отменена, средства вернулись на баланс."}
+    return {"status": "ok", "message": f"Запись отменена. {refund_text}"}
 
 
 # --- 5. УПРАВЛЕНИЕ РАСПИСАНИЕМ (ДЛЯ ВРАЧА) ---
@@ -545,7 +557,7 @@ async def manage_doctor_blocks(req: ManageBlocksRequest, current_user: User = De
         if appt:
             if appt.google_event_id and doc_prof and doc_prof.yandex_email:
                 delete_yandex_event(appt.google_event_id, doc_prof.yandex_email, doc_prof.yandex_password)
-            await db.delete(appt)
+            await db.execute(delete(Appointment).where(Appointment.id == appt.id))
 
     # 2. БЛОКИРОВКА
     for time_str in req.to_block:
@@ -577,6 +589,7 @@ async def manage_doctor_blocks(req: ManageBlocksRequest, current_user: User = De
                 await db.execute(update(Appointment).where(Appointment.id == new_appt.id).values(google_event_id=yandex_url))
                 await db.commit()
 
+    await db.commit()
     return {"status": "ok"}
 
 @router.get("/me/history", response_model=List[AppointmentResponse])

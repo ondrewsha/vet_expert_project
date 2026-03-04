@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from src.database import get_db, redis_client
 from src.models import User
-from src.schemas.schemas import SendCodeRequest, VerifyCodeRequest, TokenResponse
+from src.schemas.schemas import SendCodeRequest, SendCodeResponse, VerifyCodeRequest, TokenResponse
 from src.core.security import create_access_token, create_refresh_token
 from src.services.telegram_service import send_telegram_message
 
@@ -23,6 +23,12 @@ async def send_code(request: SendCodeRequest, db: AsyncSession = Depends(get_db)
     # Сначала ищем пользователя по телефону, чтобы узнать его telegram_id
     result = await db.execute(select(User).where(User.phone == request.phone))
     user = result.scalars().first()
+
+    is_new = False
+    if not user:
+        is_new = True
+    elif not user.full_name:
+        is_new = True
     
     sent_to_tg = False
     
@@ -40,7 +46,8 @@ async def send_code(request: SendCodeRequest, db: AsyncSession = Depends(get_db)
         print(f"⚠️ Юзер не найден или нет TG_ID. КОД ДЛЯ {request.phone}: {code}")
 
     return {
-        "message": "Код отправлен", 
+        "message": "Код отправлен",
+        "is_new" : is_new,
         "dev_info": "Смотри консоль, если это новый юзер" if not sent_to_tg else "Отправлено в бот"
     }
 
@@ -58,10 +65,17 @@ async def verify_code(request: VerifyCodeRequest, response: Response, db: AsyncS
     
     # 3. Если пользователя нет - регистрируем его
     if not user:
-        user = User(phone=request.phone)
+        if not request.full_name:
+            raise HTTPException(status_code=400, detail="Имя обязательно для регистрации")
+        user = User(phone=request.phone, full_name=request.full_name)
         db.add(user)
         await db.commit()
         await db.refresh(user)
+    else:
+        # Если юзер был (например, через бота), но без имени - обновляем
+        if not user.full_name and request.full_name:
+            user.full_name = request.full_name
+            await db.commit()
         
     # 4. Код верный, удаляем его из Redis, чтобы нельзя было использовать повторно
     await redis_client.delete(f"auth:{request.phone}")

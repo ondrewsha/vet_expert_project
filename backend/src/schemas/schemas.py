@@ -6,9 +6,15 @@ from datetime import datetime
 class SendCodeRequest(BaseModel):
     phone: str
 
+class SendCodeResponse(BaseModel):
+    message: str
+    is_new: bool
+    dev_info: Optional[str] = None
+
 class VerifyCodeRequest(BaseModel):
     phone: str
     code: str
+    full_name: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str

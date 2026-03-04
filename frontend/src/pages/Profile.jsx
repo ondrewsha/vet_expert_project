@@ -35,6 +35,7 @@ export default function Profile() {
 
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [apptToCancel, setApptToCancel] = useState(null);
+  const [isCanceling, setIsCanceling] = useState(false);
 
   const isDoctor = user?.role === 'doctor' || user?.role === 'superadmin';
 
@@ -120,18 +121,21 @@ export default function Profile() {
   // 2. Реальная отмена (вызывается из модалки)
   const confirmCancel = async () => {
     if (!apptToCancel) return;
+
+    setIsCanceling(true);
     
     try {
-      await apiClient.post(`/appointments/${apptToCancel}/cancel`);
+      const res = await apiClient.post(`/appointments/${apptToCancel}/cancel`);
       await checkAuth(); // Обновляем баланс
       fetchAppointments(); // Обновляем список
-      toast.success("Запись отменена. +1 консультация на балансе.");
+      toast.success(res.data.message || "Запись успешно отменена!");
     } catch (error) {
       toast.error("Ошибка при отмене записи.");
       console.error("Ошибка при отмене записи", error);
     } finally {
       setIsCancelModalOpen(false);
       setApptToCancel(null);
+      setIsCanceling(false); // Выключаем лоудер
     }
   };
 
@@ -170,7 +174,7 @@ export default function Profile() {
   };
 
   const handleRate = async (apptId, star) => {
-    setAppointments(prev => prev.map(a => a.id === apptId ? { ...a, rating: star } : a));
+    setHistory(prev => prev.map(a => a.id === apptId ? { ...a, rating: star } : a));
     try {
       await apiClient.patch(`/appointments/${apptId}/rating`, { rating: star });
     } catch (e) { console.error(e); }
@@ -517,7 +521,7 @@ export default function Profile() {
         </div>
       )}
 
-      {/* МОДАЛКА протокола консультации */}
+      {/* МОДАЛКА ПРОТОКОЛА КОНСУЛЬТАЦИИ */}
       <Modal isOpen={isProtocolModalOpen} onClose={() => setIsProtocolModalOpen(false)} title="Протокол консультации">
         <div className="space-y-4">
             <div className="bg-gray-50 p-3 rounded-xl text-sm">
@@ -547,21 +551,25 @@ export default function Profile() {
             Вы уверены, что хотите отменить эту запись?
           </div>
           <p className="text-gray-600 text-sm">
-            Средства не будут возвращены на банковскую карту, но будут зачислены на ваш <b>внутренний баланс</b> (1 консультация). Вы сможете использовать их для новой записи в любое время.
+            <b>Правила отмены:</b><br/>
+            — При отмене более чем за 4 часа до начала: средства возвращаются на ваш <b>внутренний баланс</b>. Вы сможете использовать их для новой записи в любое время.<br/>
+            — При отмене менее чем за 4 часа: средства <b>не возвращаются</b> (услуга считается оказанной, так как врач забронировал время).
           </p>
           
           <div className="flex gap-3 pt-2">
             <button 
               onClick={() => setIsCancelModalOpen(false)}
-              className="flex-1 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition"
+              disabled={isCanceling} // Блокируем кнопку "Оставить"
+              className="flex-1 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition disabled:opacity-50"
             >
               Оставить
             </button>
             <button 
               onClick={confirmCancel}
-              className="flex-1 py-3 text-white bg-red-500 hover:bg-red-600 rounded-xl font-bold transition"
+              disabled={isCanceling} // Блокируем кнопку "Отменить"
+              className="flex-1 py-3 text-white bg-red-500 hover:bg-red-600 rounded-xl font-bold transition flex items-center justify-center gap-2 disabled:opacity-70"
             >
-              Да, отменить
+              {isCanceling ? <Loader2 className="w-5 h-5 animate-spin" /> : "Да, отменить"}
             </button>
           </div>
         </div>

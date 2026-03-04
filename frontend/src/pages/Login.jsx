@@ -9,6 +9,8 @@ export default function Login() {
   const [step, setStep] = useState(1); // 1 - ввод телефона, 2 - ввод кода
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [isNewUser, setIsNewUser] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [needBotReg, setNeedBotReg] = useState(false); // Нужно ли идти в бота
@@ -29,9 +31,11 @@ export default function Login() {
       setPhone(formattedPhone);
 
       const res = await apiClient.post('/auth/send-code', { phone: formattedPhone });
+
+      setIsNewUser(res.data.is_new);
       
       // Смотрим, что ответил бэкенд
-      if (res.data.dev_info.includes("Смотри консоль")) {
+      if (res.data.dev_info.includes("Смотри консоль") && res.data.is_new) {
         // Значит юзер новый, ТГ нет
         setNeedBotReg(true);
       } else {
@@ -53,7 +57,9 @@ export default function Login() {
     setError('');
 
     try {
-      const res = await apiClient.post('/auth/verify-code', { phone, code });
+      const payload = { phone, code };
+      if (isNewUser) payload.full_name = fullName;
+      const res = await apiClient.post('/auth/verify-code', payload);
       await loginUser(res.data.access_token);
       navigate('/profile'); // После входа кидаем в ЛК
     } catch (err) {
@@ -146,9 +152,22 @@ export default function Login() {
           </form>
         )}
 
-        {/* --- ШАГ 2: КОД --- */}
+        {/* --- ШАГ 2: КОД И ИМЯ --- */}
         {step === 2 && (
           <form className="mt-8 space-y-6" onSubmit={handleVerifyCode}>
+            {isNewUser && (
+                <div className="animate-in fade-in slide-in-from-top-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Как к вам обращаться?</label>
+                    <input
+                        type="text"
+                        required
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="Иван Иванов"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                    />
+                </div>
+            )}
             <div className="relative">
               <KeyRound className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
