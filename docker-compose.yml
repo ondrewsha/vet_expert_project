@@ -59,6 +59,44 @@ services:
       - redis
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
   
+  # Воркер (Исполнитель)
+  celery_worker:
+    build: 
+      context: ./backend
+    container_name: vetexpert_worker
+    restart: always
+    environment:
+      - TZ=Europe/Moscow
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+      - mongo
+    # Запуск воркера
+    command: celery -A src.celery_app worker --loglevel=info
+
+  # Бит (Планировщик)
+  celery_beat:
+    build: 
+      context: ./backend
+    container_name: vetexpert_beat
+    restart: always
+    environment:
+      - TZ=Europe/Moscow
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+      - mongo
+    # Запуск планировщика
+    command: celery -A src.celery_app beat --loglevel=info
+    
   frontend:
     build:
       context: ./frontend

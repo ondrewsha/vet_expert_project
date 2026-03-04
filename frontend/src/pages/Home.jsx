@@ -72,9 +72,9 @@ export default function Home() {
                 <div className="mt-auto flex gap-3">
                     <button 
                       onClick={(e) => { e.stopPropagation(); navigate(`/guides/${guide.id}`); }}
-                      className="flex-1 bg-gray-50 ..."
+                      className="w-full bg-gray-50 text-gray-900 border border-gray-200 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-300 transition"
                     >
-                      <Eye className="w-5 h-5" /> Смотреть
+                      <Eye className="w-5 h-5 text-gray-500" /> Смотреть
                     </button>
                     
                     {/* Кнопка лайка */}

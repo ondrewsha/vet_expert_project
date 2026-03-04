@@ -567,3 +567,33 @@ async def manage_doctor_blocks(req: ManageBlocksRequest, current_user: User = De
                 await db.commit()
 
     return {"status": "ok"}
+
+@router.get("/me/history", response_model=List[AppointmentResponse])
+async def get_my_appointments_history(
+    limit: int = 5,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получить историю записей (завершенные/отмененные) с пагинацией"""
+    
+    # Базовый запрос
+    query = select(Appointment).options(
+        selectinload(Appointment.doctor), 
+        selectinload(Appointment.files)
+    )
+
+    # Фильтр по роли
+    if current_user.role == "doctor":
+        query = query.where(Appointment.doctor_id == current_user.id)
+    else:
+        query = query.where(Appointment.user_id == current_user.id)
+        
+    # Фильтр по статусу (только завершенные)
+    query = query.where(Appointment.status.in_(["completed", "canceled"]))
+    
+    # Сортировка и лимит
+    query = query.order_by(Appointment.start_time.desc()).limit(limit).offset(offset)
+    
+    result = await db.execute(query)
+    return result.scalars().all()

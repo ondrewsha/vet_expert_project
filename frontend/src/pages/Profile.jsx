@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 import { formatPhone } from '../lib/utils';
@@ -16,25 +16,57 @@ export default function Profile() {
   const [name, setName] = useState(user?.full_name || '');
   const [phone, setPhone] = useState(user?.phone || '');
   const [savingData, setSavingData] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
 
   const [phoneStep, setPhoneStep] = useState(0); // 0 = спит, 1 = вводим код
   const [phoneCode, setPhoneCode] = useState('');
   const [needBot, setNeedBot] = useState(false);
 
+  const [history, setHistory] = useState([]); // Отдельный стейт для истории
+  const [hasMoreHistory, setHasMoreHistory] = useState(true); // Есть ли еще?
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const initialized = useRef(false);
+  const HISTORY_LIMIT = 3;
+
   const isDoctor = user?.role === 'doctor' || user?.role === 'superadmin';
 
   const fetchAppointments = () => {
     apiClient.get('/appointments/me')
-      .then(res => setAppointments(res.data))
+      .then(res => {
+        setAppointments(res.data.filter(a => a.status === 'scheduled'));
+      })
       .catch(() => {})
       .finally(() => setLoadingAppts(false));
   };
 
+  const loadHistoryData = async (offset) => {
+      setLoadingHistory(true);
+      try {
+          const res = await apiClient.get(`/appointments/me/history?limit=${HISTORY_LIMIT}&offset=${offset}`);
+          if (res.data.length < HISTORY_LIMIT) setHasMoreHistory(false);
+          
+          setHistory(prev => {
+              // Защита от дублей ID
+              const existingIds = new Set(prev.map(i => i.id));
+              const uniqueNew = res.data.filter(i => !existingIds.has(i.id));
+              return [...prev, ...uniqueNew];
+          });
+      } finally {
+          setLoadingHistory(false);
+      }
+  };
+
   useEffect(() => {
-        apiClient.get('/users/me/guides').then(res => setGuides(res.data)).finally(() => setLoadingGuides(false));
+    apiClient.get('/users/me/guides').then(res => setGuides(res.data)).finally(() => setLoadingGuides(false));
     fetchAppointments();
+    if (!initialized.current) {
+        initialized.current = true;
+        loadHistoryData(0);
+    }
   },[]);
+
+  const handleLoadMore = () => {
+      loadHistoryData(history.length);
+  };
 
   // Сохранение имени и телефона
   const handleSaveData = async () => {
@@ -149,9 +181,6 @@ export default function Profile() {
           console.error("Ошибка при загрузке заключения", e);
       }
   };
-
-  const upcomingAppts = appointments.filter(a => a.status === 'scheduled');
-  const historyAppts = appointments.filter(a => a.status === 'completed' || a.status === 'canceled');
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
@@ -289,13 +318,13 @@ export default function Profile() {
       
       {loadingAppts ? (
         <div className="flex justify-center py-6"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-      ) : upcomingAppts.length === 0 ? (
+      ) : appointments.length === 0 ? (
         <div className="bg-gray-50 rounded-2xl p-6 text-center text-gray-500 border border-dashed border-gray-200 mb-10">
           У вас нет запланированных консультаций.
         </div>
       ) : (
         <div className="space-y-4 mb-10">
-          {upcomingAppts.map(appt => (
+          {appointments.map(appt => (
             <div key={appt.id} className="bg-white rounded-2xl p-6 shadow-sm border border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
                   <div>
@@ -345,64 +374,72 @@ export default function Profile() {
       )}
 
       {/* --- ИСТОРИЯ ЗАПИСЕЙ --- */}
-      {historyAppts.length > 0 && (
-          <div className="mb-12">
-          <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-lg font-bold text-gray-600 hover:text-gray-900 transition">
-            История приемов {showHistory ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </button>
-          {showHistory && (
-            <div className="mt-4 space-y-4">
-              {historyAppts.map(appt => (
-                <div key={appt.id} className="bg-gray-50 rounded-2xl p-6 border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 opacity-80 hover:opacity-100 transition">
-                  <div>
-                    <div className="flex items-center gap-3 mb-1">
-                      <span className="text-gray-600 font-bold">{formatDateTime(appt.start_time)}</span>
-                      {appt.status === 'canceled' && <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-md font-medium">Отменена</span>}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                      <Stethoscope className="w-4 h-4 text-emerald-500" />
-                      {appt.doctor?.full_name || "Специалист"}
-                    </div>
-                    <div className="text-sm text-gray-500">{appt.pet_info || 'Не указано'}</div>
+      {history.length > 0 && (
+        <div className="mb-12">
+          <div className="flex items-center gap-2 text-lg font-bold text-gray-600 hover:text-gray-900 transition">
+            История приемов
+          </div>
+          <div className="mt-4 space-y-4">
+            {history.map(appt => (
+              <div key={appt.id} className="bg-gray-50 rounded-2xl p-6 border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 opacity-80 hover:opacity-100 transition">
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <span className="text-gray-600 font-bold">{formatDateTime(appt.start_time)}</span>
+                    {appt.status === 'canceled' && <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-md font-medium">Отменена</span>}
                   </div>
-                  {/* ЗАКЛЮЧЕНИЕ */}
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                      {appt.protocol_file_id ? (
-                          <a href={`/api/appointments/files/${appt.protocol_file_id}`} target="_blank" className="flex items-center gap-2 text-emerald-700 font-bold hover:underline">
-                              <FileText className="w-5 h-5"/> Скачать заключение врача
-                          </a>
-                      ) : isDoctor && appt.status !== 'canceled' ? (
-                          <label className="flex items-center gap-2 cursor-pointer text-blue-600 hover:text-blue-800 transition">
-                              <Upload className="w-4 h-4"/>
-                              <span className="text-sm font-medium">Загрузить заключение (PDF)</span>
-                              <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleUploadProtocol(appt.id, e.target.files[0])} />
-                          </label>
-                      ) : (
-                          <div>
-                            {appt.status !== 'canceled' && <span className="text-gray-400 text-sm">Заключение еще не готово</span>}
-                          </div>
-                      )}
+                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                    <Stethoscope className="w-4 h-4 text-emerald-500" />
+                    {appt.doctor?.full_name || "Специалист"}
                   </div>
-                  
-                  {appt.status === 'completed' && (
-                    <div>
-                      <div className="text-sm font-medium text-gray-500 mb-2 text-center sm:text-right">
-                        {appt.rating ? "Ваша оценка" : "Оцените прием"}
-                      </div>
-                      <div className="flex gap-1 justify-center sm:justify-end">
-                        {[1, 2, 3, 4, 5].map(star => (
-                          <button key={star} onClick={() => handleRate(appt.id, star)} className={`transition ${(appt.rating || 0) >= star ? 'text-amber-400' : 'text-gray-300 hover:text-amber-200'}`}>
-                            <Star className="w-7 h-7 fill-current" />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                  <div className="text-sm text-gray-500">{appt.pet_info || 'Не указано'}</div>
+                </div>
+                {/* ЗАКЛЮЧЕНИЕ */}
+                <div className="items-center">
+                    {appt.protocol_file_id ? (
+                        <a href={`/api/appointments/files/${appt.protocol_file_id}`} target="_blank" className="flex items-center gap-2 text-emerald-700 font-bold hover:underline">
+                            <FileText className="w-5 h-5"/> Скачать заключение врача
+                        </a>
+                    ) : isDoctor && appt.status !== 'canceled' ? (
+                        <label className="flex items-center gap-2 cursor-pointer text-blue-600 hover:text-blue-800 transition">
+                            <Upload className="w-4 h-4"/>
+                            <span className="text-sm font-medium">Загрузить заключение (PDF)</span>
+                            <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleUploadProtocol(appt.id, e.target.files[0])} />
+                        </label>
+                    ) : (
+                        <div>
+                          {appt.status !== 'canceled' && <span className="text-gray-400 text-sm">Заключение еще не готово</span>}
+                        </div>
                     )}
                 </div>
-              ))}
-            </div>
-          )}
+                
+                {appt.status === 'completed' && !isDoctor && (
+                  <div>
+                    <div className="text-sm font-medium text-gray-500 mb-2 text-center sm:text-right">
+                      {appt.rating ? "Ваша оценка" : "Оцените прием"}
+                    </div>
+                    <div className="flex gap-1 justify-center sm:justify-end">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <button key={star} onClick={() => handleRate(appt.id, star)} className={`transition ${(appt.rating || 0) >= star ? 'text-amber-400' : 'text-gray-300 hover:text-amber-200'}`}>
+                          <Star className="w-7 h-7 fill-current" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  )}
+              </div>
+            ))}
+            {/* Кнопка "Показать еще" */}
+            {hasMoreHistory && (
+              <button 
+                onClick={handleLoadMore} 
+                disabled={loadingHistory}
+                className="w-full py-3 text-sm font-medium text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition flex justify-center"
+              >
+                {loadingHistory ? <Loader2 className="w-4 h-4 animate-spin"/> : "Показать еще"}
+              </button>
+            )}
           </div>
+        </div>
       )}
 
       {/* ... Блок "Мои гайды" ... */}

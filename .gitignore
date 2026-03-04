@@ -1,3 +1,4 @@
 .env
 venv_vet_expert/
 collect_code.py
+backend/celerybeat-schedule

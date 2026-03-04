@@ -27,3 +27,7 @@ icalendar==5.0.11
 # Админка
 sqladmin[fastapi]==0.16.1
 itsdangerous==2.1.2
+
+# селери редис
+celery==5.3.6
+redis==5.0.3
