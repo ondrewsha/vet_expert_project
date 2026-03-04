@@ -94,11 +94,24 @@ class Appointment(Base):
     google_event_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     meet_link: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    protocol_file_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(foreign_keys=[user_id], back_populates="appointments")
     doctor: Mapped["User"] = relationship(foreign_keys=[doctor_id], back_populates="doctor_appointments")
 
+    files: Mapped[List["AppointmentFile"]] = relationship(back_populates="appointment", cascade="all, delete-orphan")
+
+class AppointmentFile(Base):
+    __tablename__ = "appointment_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"))
+    mongo_file_id: Mapped[str] = mapped_column(String)
+    filename: Mapped[str] = mapped_column(String)
+    
+    appointment: Mapped["Appointment"] = relationship(back_populates="files")
+    
 class Like(Base):
     __tablename__ = "likes"
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)

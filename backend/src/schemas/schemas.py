@@ -48,14 +48,16 @@ class GuideResponse(GuideBase):
     cover_image_id: Optional[str] = None
     mongo_file_id: Optional[str] = None
     pdf_filename: Optional[str] = None
+    likes_count: int = 0
+    comments_count: int = 0
+    is_liked: bool = False 
+
 
     class Config:
         from_attributes = True
 
 class GuideDetailResponse(GuideResponse):
-    likes_count: int = 0
     comments: List[CommentResponse] =[]
-    is_liked: bool = False
 
 # --- ДАННЫЕ ТОКЕНА ---
 class TokenData(BaseModel):
@@ -131,6 +133,14 @@ class AppointmentBase(BaseModel):
 class AppointmentCreate(AppointmentBase):
     doctor_id: Optional[int] = None
 
+class AppointmentFileResponse(BaseModel):
+    id: int
+    filename: str
+    mongo_file_id: str
+    
+    class Config:
+        from_attributes = True
+        
 class AppointmentResponse(AppointmentBase):
     id: int
     end_time: datetime
@@ -139,6 +149,8 @@ class AppointmentResponse(AppointmentBase):
     rating: Optional[int] = None
     google_event_id: Optional[str] = None
     doctor: Optional[DoctorBasicInfo] = None
+    protocol_file_id: Optional[str] = None
+    files: List[AppointmentFileResponse] = []
 
     class Config:
         from_attributes = True

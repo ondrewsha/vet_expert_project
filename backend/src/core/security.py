@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Optional
 from jose import jwt, JWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -60,3 +61,21 @@ async def get_current_user(
         raise credentials_exception
         
     return user
+
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security), 
+    db: AsyncSession = Depends(get_db)
+):
+    if not credentials:
+        return None
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None: return None
+        token_data = TokenData(user_id=user_id, role=payload.get("role"))
+    except JWTError:
+        return None
+
+    result = await db.execute(select(User).where(User.id == int(token_data.user_id)))
+    return result.scalars().first()

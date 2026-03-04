@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight, UserPlus, Stethoscope } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight, UserPlus, Stethoscope, Paperclip, X } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'sonner';
@@ -24,6 +24,10 @@ export default function Consultation() {
   
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [petInfo, setPetInfo] = useState('');
+  
+  // Стейт для файлов
+  const [files, setFiles] = useState([]); 
+  
   const [isBooking, setIsBooking] = useState(false);
 
   // 1. Загрузка списка врачей ПРИ СМЕНЕ ДАТЫ
@@ -73,25 +77,42 @@ export default function Consultation() {
     setSelectedSlot(null);
   };
 
+  // Обработка выбора файлов
+  const handleFileChange = (e) => {
+    if (e.target.files) {
+      setFiles(prev => [...prev, ...Array.from(e.target.files)]);
+    }
+  };
+
+  const removeFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const formatTime = (isoString) => {
     const date = new Date(isoString);
     return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
   };
 
   const handleBook = async () => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
+    if (!isAuthenticated) return navigate('/login');
     if (!selectedSlot) return;
 
     setIsBooking(true);
+    
+    // ИСПОЛЬЗУЕМ FORMDATA
+    const formData = new FormData();
+    formData.append('start_time', selectedSlot);
+    formData.append('pet_info', petInfo);
+    if (selectedDoctorId) formData.append('doctor_id', selectedDoctorId);
+    
+    // Добавляем файлы
+    files.forEach(file => {
+      formData.append('files', file);
+    });
+
     try {
-      const res = await apiClient.post('/appointments/book', {
-        start_time: selectedSlot,
-        pet_info: petInfo,
-        doctor_id: selectedDoctorId
-      });
+      // Важно: не указываем Content-Type вручную, axios сам поставит multipart/form-data
+      const res = await apiClient.post('/appointments/book', formData);
       
       if (!res.data.payment_url) {
         toast.success("Запись успешно оформлена! Средства списаны с вашего баланса.");
@@ -119,20 +140,20 @@ export default function Consultation() {
         </h1>
         <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
           Получите квалифицированную помощь ветеринара, не выходя из дома.
-        </p>
+</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* ЛЕВАЯ КОЛОНКА: Выбор врача и даты (Занимает 7 колонок) */}
+        {/* ЛЕВАЯ КОЛОНКА (Врачи, Дата, Время) - Код такой же как был */}
         <div className="lg:col-span-7 space-y-6">
           
           {/* Блок выбора врача */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
               <Stethoscope className="w-5 h-5 text-primary" />
               Специалист
-            </h2>
+                </h2>
             
             {loadingDoctors ? (
                 <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
@@ -142,7 +163,7 @@ export default function Consultation() {
                     Пожалуйста, выберите другую дату в календаре ниже.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Карточка "Любой врач" */}
                   <div 
                     onClick={() => handleDoctorSelect(null)}
@@ -183,19 +204,19 @@ export default function Consultation() {
                         <p className="text-xs text-gray-500 mt-1 line-clamp-2">
                           {doc.doctor_profile?.description || 'Ветеринарный врач'}
                         </p>
-                      </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                  ))}
-                </div>
             )}
-          </div>
+             </div>
 
           {/* Блок выбора даты и времени */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex flex-col sm:flex-row gap-6">
               
               {/* Дата */}
-              <div className="flex-1">
+                    <div className="flex-1">
                 <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
                   <CalendarIcon className="w-5 h-5 text-primary" />
                   Дата
@@ -207,7 +228,7 @@ export default function Consultation() {
                   onChange={handleDateChange}
                   className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition cursor-pointer bg-white"
                 />
-              </div>
+                    </div>
 
               {/* Время */}
               <div className="flex-2">
@@ -219,7 +240,7 @@ export default function Consultation() {
                 {loadingSlots || loadingDoctors ? (
                   <div className="flex justify-center py-6">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  </div>
+                          </div>
                 ) : doctors.length === 0 ? (
                   // ИСПРАВЛЕНИЕ: Если врачей нет, явно пишем об этом и не даем выбрать слоты
                   <div className="text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
@@ -246,19 +267,19 @@ export default function Consultation() {
                     ))}
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
+                    </div>
+                </div>
+             </div>
         </div>
 
-        {/* ПРАВАЯ КОЛОНКА: О питомце и Оплата (Занимает 5 колонок) */}
+        {/* ПРАВАЯ КОЛОНКА: Данные и Файлы */}
         <div className="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col sticky top-24 h-fit">
           <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
             <Info className="w-5 h-5 text-primary" />
             Данные пациента
           </h2>
 
-          <div className="grow mb-6">
+          <div className="grow mb-6 space-y-4">
             {selectedSlot ? (
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
                 <div className="bg-emerald-50 text-emerald-800 p-4 rounded-xl text-sm border border-emerald-100">
@@ -276,6 +297,30 @@ export default function Consultation() {
                     placeholder="Например: Собака корги, 3 года. Второй день чешет ухо и трясет головой..."
                     className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none"
                   ></textarea>
+                </div>
+
+                {/* ЗАГРУЗКА ФАЙЛОВ */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Анализы / Фото (если есть)</label>
+                  <label className="flex items-center justify-center w-full h-16 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50 transition">
+                      <div className="flex items-center gap-2 text-gray-500">
+                          <Paperclip className="w-4 h-4" />
+                          <span className="text-sm">Прикрепить файлы</span>
+                      </div>
+                      <input type="file" multiple className="hidden" onChange={handleFileChange} />
+                  </label>
+                  
+                  {/* Список файлов */}
+                  {files.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                          {files.map((f, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs bg-gray-50 p-2 rounded-lg border border-gray-200">
+                                  <span className="truncate max-w-50">{f.name}</span>
+                                  <button onClick={() => removeFile(i)} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4"/></button>
+                              </div>
+                          ))}
+                      </div>
+                  )}
                 </div>
               </div>
             ) : (

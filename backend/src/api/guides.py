@@ -1,23 +1,52 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, case, func
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote
 
 from src.database import get_db, fs
 from src.models import Guide, User, Purchase, Like, Comment
 from src.schemas.schemas import GuideCreate, GuideResponse, GuideDetailResponse, CommentCreate, CommentResponse
-from src.core.security import get_current_user
+from src.core.security import get_current_user, get_current_user_optional
 
 router = APIRouter(prefix="/api/guides", tags=["Guides"])
 
 # --- ПРОСМОТР ВСЕХ ГАЙДОВ (Витрина) ---
 @router.get("", response_model=List[GuideResponse])
-async def get_active_guides(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Guide).where(Guide.is_active == True).order_by(Guide.created_at.desc()))
-    return result.scalars().all()
+async def get_active_guides(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    # 1. Достаем гайды
+    result = await db.execute(
+        select(Guide).where(Guide.is_active == True).order_by(Guide.created_at.desc())
+    )
+    guides = result.scalars().all()
+    
+    response = []
+    current_user_id = current_user.id if current_user else None
+
+    # Это не супер-оптимально (N+1 запрос), но для MVP пойдет. 
+    # В идеале нужно делать join'ы, но это усложнит код sqlalchemy сейчас.
+    for g in guides:
+        likes_count = await db.scalar(select(func.count()).select_from(Like).where(Like.guide_id == g.id))
+        comments_count = await db.scalar(select(func.count()).select_from(Comment).where(Comment.guide_id == g.id))
+        
+        is_liked = False
+        if current_user_id:
+             like = await db.scalar(select(Like).where(Like.guide_id == g.id, Like.user_id == current_user_id))
+             is_liked = bool(like)
+             
+        # Превращаем ORM модель в Pydantic схему вручную или через конструктор
+        g_resp = GuideResponse.model_validate(g)
+        g_resp.likes_count = likes_count
+        g_resp.comments_count = comments_count
+        g_resp.is_liked = is_liked
+        response.append(g_resp)
+
+    return response
 
 # --- ПОЛУЧИТЬ ОДИН ГАЙД (С КОММЕНТАМИ И ЛАЙКАМИ) ---
 @router.get("/{guide_id}", response_model=GuideDetailResponse)

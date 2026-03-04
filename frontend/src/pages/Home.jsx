@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Book, Loader2, Eye } from 'lucide-react';
+import { Book, Loader2, Eye, Heart } from 'lucide-react';
 import { apiClient } from '../api/client';
 
 export default function Home() {
@@ -69,14 +69,19 @@ export default function Home() {
                 </p>
                 
                 {/* Кнопки внизу */}
-                <div className="mt-auto">
-                  <button 
-                    onClick={() => navigate(`/guides/${guide.id}`)}
-                    className="w-full bg-gray-50 text-gray-900 border border-gray-200 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-gray-100 hover:border-gray-300 transition"
-                  >
-                    <Eye className="w-5 h-5 text-gray-500" />
-                    Смотреть подробнее
-                  </button>
+                <div className="mt-auto flex gap-3">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); navigate(`/guides/${guide.id}`); }}
+                      className="flex-1 bg-gray-50 ..."
+                    >
+                      <Eye className="w-5 h-5" /> Смотреть
+                    </button>
+                    
+                    {/* Кнопка лайка */}
+                    <button className="px-3 py-2 bg-pink-50 text-pink-500 rounded-xl flex items-center gap-1 font-bold">
+                      <Heart className={`w-4 h-4 ${guide.is_liked ? 'fill-current' : ''}`} />
+                      {guide.likes_count}
+                    </button>
                 </div>
               </div>
             </div>

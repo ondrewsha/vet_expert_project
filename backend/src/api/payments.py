@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 
 from src.database import get_db, redis_client
-from src.models import Appointment, Guide, User, DoctorProfile
+from src.models import Appointment, Guide, User, DoctorProfile, AppointmentFile
 from src.core.security import get_current_user
 from src.services.telegram_service import send_telegram_message
 from src.services.yookassa_service import create_payment_url
@@ -57,47 +57,62 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                     pet_info=pet_info, meet_link=meet_link
                 )
                 db.add(new_appt)
+                await db.commit() # Получаем ID записи
+
+                # --- ЛОГИКА ФАЙЛОВ ---
+                files_str = metadata.get("files_data")
+                file_names_list = [] # Список имен для Телеграма
+                
+                if files_str:
+                    file_pairs = files_str.split(",")
+                    for pair in file_pairs:
+                        if "|" in pair:
+                            fid, fname = pair.split("|")
+                            af = AppointmentFile(appointment_id=new_appt.id, mongo_file_id=fid, filename=fname)
+                            db.add(af)
+                            file_names_list.append(fname)
+                    await db.commit()
+                # ---------------------
                 
                 user = await db.get(User, user_id)
                 client_name = user.full_name if user and user.full_name else "Без имени"
-                
-                await db.commit()
 
-                yandex_event_url = None
-
-                # Создаем событие в Яндекс Календаре ВРАЧА
+                # Яндекс Календарь
                 if doc_profile and doc_profile.yandex_email:
+                    file_desc = f"\nФайлов прикреплено: {len(file_names_list)}" if file_names_list else ""
                     yandex_event_url = create_yandex_event(
                         start_time=start_time,
                         summary=f"🩺 Пациент: {pet_info}",
-                        description=f"Клиент: {client_name}\nТелефон: {user.phone if user else ''}",
+                        description=f"Клиент: {client_name}\nТелефон: {user.phone if user else ''}{file_desc}",
                         email=doc_profile.yandex_email,
                         password=doc_profile.yandex_password
                     )
-                
-                if yandex_event_url:
-                    await db.execute(
-                        update(Appointment)
-                        .where(Appointment.id == new_appt.id)
-                        .values(google_event_id=yandex_event_url)
-                    )
-                    await db.commit()
+                    if yandex_event_url:
+                        await db.execute(
+                            update(Appointment).where(Appointment.id == new_appt.id).values(google_event_id=yandex_event_url)
+                        )
+                        await db.commit()
                 
                 await redis_client.delete(f"slot_lock:{doctor_id}:{start_time_naive.isoformat()}")
                 
                 time_str = start_time.strftime('%d.%m.%Y %H:%M')
                 doc_name = doctor.full_name if doctor else 'Специалист'
+                
+                # Формируем текст про файлы для ТГ
+                files_msg_part = ""
+                if file_names_list:
+                    files_msg_part = "\n📎 <b>Прикрепленные файлы:</b>\n" + "\n".join([f"- {name}" for name in file_names_list])
 
-                # 1. Уведомление Суперадмину
+                # 1. Суперадмину
                 await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, 
-                    f"💰 <b>Оплачена запись!</b>\n📅 {time_str}\nВрач: {doc_name}\n🐶 {pet_info}\n👤 {client_name} (ID: {user_id})"
+                    f"💰 <b>Оплачена запись!</b>\n📅 {time_str}\nВрач: {doc_name}\n🐶 {pet_info}\n👤 {client_name}{files_msg_part}"
                 )
-                # 2. Уведомление Врачу
+                # 2. Врачу
                 if doctor and doctor.telegram_id:
                     await send_telegram_message(doctor.telegram_id, 
-                        f"🩺 <b>У вас новая запись!</b>\n📅 {time_str}\n🐶 {pet_info}\n🔗 Ссылка на вашу комнату: {meet_link}"
+                        f"🩺 <b>У вас новая запись!</b>\n📅 {time_str}\n🐶 {pet_info}\n🔗 <a href='{meet_link}'>Ссылка на звонок</a>{files_msg_part}"
                     )
-                # 3. Уведомление Клиенту
+                # 3. Клиенту
                 if user and user.telegram_id:
                     await send_telegram_message(user.telegram_id, 
                         f"✅ <b>Оплата прошла успешно!</b>\nВы записаны к врачу: {doc_name}\n📅 {time_str}\n🔗 <a href='{meet_link}'>Ссылка на видеозвонок</a>"

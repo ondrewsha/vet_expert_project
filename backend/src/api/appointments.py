@@ -1,16 +1,20 @@
 from datetime import datetime, timedelta, date, time
 from typing import List, Optional
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException, status
+from urllib.parse import quote
+from bson import ObjectId
+
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, update
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
 from src.services.telegram_service import send_telegram_message
-from src.database import get_db, redis_client
-from src.models import User, Appointment, DoctorProfile
-from src.schemas.schemas import AppointmentCreate, AppointmentResponse, DoctorResponse
+from src.database import get_db, redis_client, fs
+from src.models import User, Appointment, DoctorProfile, AppointmentFile
+from src.schemas.schemas import AppointmentResponse, DoctorResponse
 from src.core.security import get_current_user
 from src.services.yookassa_service import create_payment_url
 from src.services.yandex_calendar_service import get_busy_slots_yandex, delete_yandex_event, create_yandex_event
@@ -25,25 +29,22 @@ CONSULTATION_DURATION_MINUTES = 30
 class RatingUpdate(BaseModel):
     rating: int
 
-class BlockSlotRequest(BaseModel):
-    start_time: datetime
-    duration_minutes: int = 60
+class ManageBlocksRequest(BaseModel):
+    date: str
+    to_block: List[str]
+    to_unblock: List[str]
 
 class DoctorDayScheduleResponse(BaseModel):
     time: str
-    state: str # "free", "booked", "blocked", "yandex"
+    state: str 
     appt_id: Optional[int] = None
 
-class ManageBlocksRequest(BaseModel):
-    date: date
-    to_block: List[str] # ["10:00", "11:00"]
-    to_unblock: List[str]
+
+# --- 1. ЭНДПОИНТЫ ДЛЯ ВРАЧЕЙ И РАСПИСАНИЯ ---
 
 @router.get("/doctors", response_model=List[DoctorResponse])
 async def get_doctors(target_date: date, db: AsyncSession = Depends(get_db)):
-    """Получить список врачей, которые РАБОТАЮТ в указанный день"""
-    
-    # 0 = Понедельник, 6 = Воскресенье (в Python так работает .weekday())
+    """Получить список врачей, работающих в этот день"""
     day_index = str(target_date.weekday()) 
 
     result = await db.execute(
@@ -54,7 +55,7 @@ async def get_doctors(target_date: date, db: AsyncSession = Depends(get_db)):
     all_doctors = result.scalars().all()
     
     # Фильтруем: оставляем только тех, у кого day_index есть в work_days, и кто is_active
-    working_doctors =[]
+    working_doctors = []
     for doc in all_doctors:
         prof = doc.doctor_profile
         # Если профиля нет или is_active False - пропускаем
@@ -69,7 +70,7 @@ async def get_doctors(target_date: date, db: AsyncSession = Depends(get_db)):
 
 @router.get("/available")
 async def get_available_slots(target_date: date, doctor_id: Optional[int] = None, db: AsyncSession = Depends(get_db)):
-    all_slots =[]
+    all_slots = []
     moscow_tz = ZoneInfo("Europe/Moscow")
     current_time = datetime.combine(target_date, time(WORK_START_HOUR, 0))
     end_time = datetime.combine(target_date, time(WORK_END_HOUR, 0))
@@ -93,7 +94,7 @@ async def get_available_slots(target_date: date, doctor_id: Optional[int] = None
     doctors = result.scalars().all()
 
     if not doctors:
-        return {"date": target_date, "available_slots":[]}
+        return {"date": target_date, "available_slots": []}
 
     # 2. Собираем занятые слоты для каждого врача
     doctors_busy_data = {}
@@ -105,14 +106,14 @@ async def get_available_slots(target_date: date, doctor_id: Optional[int] = None
                     Appointment.doctor_id == doc.id,
                     Appointment.start_time >= start_of_day,
                     Appointment.start_time <= end_of_day,
-                    Appointment.status.in_(["scheduled", "completed"])
+                    Appointment.status.in_(["scheduled", "completed", "blocked"])
                 )
             )
         )
         db_slots = [row[0].astimezone(moscow_tz).replace(tzinfo=None) if row[0].tzinfo else row[0].replace(tzinfo=None) for row in db_res.all()]
         
         # Яндекс
-        yandex_slots =[]
+        yandex_slots = []
         if doc.doctor_profile and doc.doctor_profile.yandex_email:
             yandex_slots = get_busy_slots_yandex(
                 start_of_day, end_of_day, 
@@ -122,9 +123,9 @@ async def get_available_slots(target_date: date, doctor_id: Optional[int] = None
         doctors_busy_data[doc.id] = {"db": db_slots, "yandex": yandex_slots}
 
     # 3. Проверяем слоты. Слот доступен, если ХОТЯ БЫ ОДИН запрошенный врач свободен
-    available_slots =[]
+    available_slots = []
     for slot in all_slots:
-        slot_end = slot + timedelta(minutes=30)
+        slot_end = slot + timedelta(minutes=CONSULTATION_DURATION_MINUTES)
         is_slot_available = False
 
         for doc in doctors:
@@ -147,142 +148,225 @@ async def get_available_slots(target_date: date, doctor_id: Optional[int] = None
 
             if not is_busy:
                 is_slot_available = True
-                break # Нашли свободного врача для этого слота!
+                break
                 
         if is_slot_available:
             available_slots.append(slot)
 
     return {"date": target_date, "available_slots": available_slots}
 
-@router.post("/book")
-async def book_appointment(appt_in: AppointmentCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    slot_time = appt_in.start_time.replace(tzinfo=None)
-    moscow_tz = ZoneInfo("Europe/Moscow")
-    
-    # Ищем всех подходящих врачей
-    query = select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"]))
-    if appt_in.doctor_id:
-        query = query.where(User.id == appt_in.doctor_id)
-    result = await db.execute(query)
-    doctors = result.scalars().all()
+# --- 2. РАБОТА С ФАЙЛАМИ ---
 
-    if not doctors:
-        raise HTTPException(status_code=400, detail="Врачи не найдены")
-
-    # Ищем ПЕРВОГО СВОБОДНОГО врача на этот слот
-    assigned_doctor = None
-    for doc in doctors:
-        is_locked = await redis_client.get(f"slot_lock:{doc.id}:{slot_time.isoformat()}")
-        if is_locked: continue
+@router.get("/files/{file_id}")
+async def get_appointment_file(file_id: str, db: AsyncSession = Depends(get_db)):
+    """Скачивание файлов (анализов и протоколов)"""
+    try:
+        # Открываем поток GridFS
+        grid_out = await fs.open_download_stream(ObjectId(file_id))
         
-        # Легкая проверка БД, чтобы точно не наложилось
-        overlap = await db.execute(
-            select(Appointment).where(
-                Appointment.doctor_id == doc.id,
-                Appointment.start_time == slot_time.replace(tzinfo=moscow_tz),
-                Appointment.status.in_(["scheduled", "completed"])
-            )
+        # Получаем имя и тип файла из метаданных Mongo
+        filename = grid_out.filename or "file"
+        content_type = grid_out.metadata.get("content_type") if grid_out.metadata else None
+        
+        # Если тип не определен, ставим дефолтный
+        if not content_type:
+             content_type = "application/octet-stream"
+
+        # Кодируем имя файла для заголовка (чтобы кириллица не ломалась)
+        encoded_filename = quote(filename)
+
+        return StreamingResponse(
+            grid_out, 
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"
+            }
         )
-        if overlap.scalars().first(): continue
+    except Exception as e:
+        print(f"Error downloading file: {e}")
+        raise HTTPException(status_code=404, detail="Файл не найден")
+
+@router.post("/{appt_id}/protocol")
+async def upload_protocol(
+    appt_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Загрузка заключения врачом"""
+    appt = await db.get(Appointment, appt_id)
+    if not appt: raise HTTPException(404)
+    
+    if current_user.role != "superadmin" and appt.doctor_id != current_user.id:
+        raise HTTPException(403)
         
-        assigned_doctor = doc
-        break
+    file_id = await fs.upload_from_stream(
+        filename=file.filename, source=file.file, metadata={"content_type": file.content_type}
+    )
+    
+    appt.protocol_file_id = str(file_id)
+    appt.status = "completed"
+    await db.commit()
+    
+    # Уведомляем клиента
+    user_query = await db.execute(select(User).where(User.id == appt.user_id))
+    user = user_query.scalars().first()
+    if user and user.telegram_id:
+        await send_telegram_message(user.telegram_id, "📄 <b>Врач прикрепил заключение!</b>\nПосмотреть его можно в личном кабинете.")
+            
+    return {"status": "ok"}
 
-    if not assigned_doctor:
-        raise HTTPException(status_code=409, detail="К сожалению, это время только что заняли. Выберите другое.")
 
-    # Лочим слот конкретного врача
-    redis_key = f"slot_lock:{assigned_doctor.id}:{slot_time.isoformat()}"
-    lock_data = f"{current_user.id}|{appt_in.pet_info or ''}"
+# --- 3. БРОНИРОВАНИЕ (С ФАЙЛАМИ И БАЛАНСОМ) ---
+
+@router.post("/book")
+async def book_appointment(
+    start_time: str = Form(...),
+    pet_info: str = Form(""),
+    doctor_id: int = Form(...),
+    files: List[UploadFile] = File(None),
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    # 1. Парсим время и таймзону
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    try:
+        start_dt = datetime.fromisoformat(start_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверный формат времени")
+    
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=moscow_tz)
+    
+    slot_time = start_dt.replace(tzinfo=None) # Для Redis
+    
+    # 2. Проверяем блокировку Redis
+    redis_key = f"slot_lock:{doctor_id}:{slot_time.isoformat()}"
+    if await redis_client.get(redis_key):
+        raise HTTPException(status_code=409, detail="Слот занят.")
+    
+    # Лочим слот
+    lock_data = f"{current_user.id}|{pet_info}"
     await redis_client.set(redis_key, lock_data, ex=900)
 
-    # Достаем Телемост врача (или дефолтный)
-    meet_link = assigned_doctor.doctor_profile.telemost_link if assigned_doctor.doctor_profile and assigned_doctor.doctor_profile.telemost_link else settings.YANDEX_TELEMOST_LINK
+    # 3. Ищем врача
+    doctor = await db.get(User, doctor_id)
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Врач не найден")
+    
+    prof_res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == doctor_id))
+    doc_prof = prof_res.scalars().first()
+    meet_link = doc_prof.telemost_link if doc_prof and doc_prof.telemost_link else settings.YANDEX_TELEMOST_LINK
 
-    # --- ЗАПИСЬ С БАЛАНСА ---
+    # 4. ЗАГРУЖАЕМ ФАЙЛЫ В MONGO
+    uploaded_file_ids = []
+    if files:
+        for file in files:
+            file_id = await fs.upload_from_stream(
+                filename=file.filename, 
+                source=file.file, 
+                metadata={"content_type": file.content_type}
+            )
+            uploaded_file_ids.append({"id": str(file_id), "name": file.filename})
+
+    # --- ВАРИАНТ А: ОПЛАТА БАЛЛАМИ ---
     if current_user.unused_consultations > 0:
         current_user.unused_consultations -= 1
-        start_time_tz = slot_time.replace(tzinfo=moscow_tz)
         
+        # Создаем запись
         new_appt = Appointment(
             user_id=current_user.id,
-            doctor_id=assigned_doctor.id,
-            start_time=start_time_tz,
-            end_time=start_time_tz + timedelta(minutes=30),
+            doctor_id=doctor_id,
+            start_time=start_dt,
+            end_time=start_dt + timedelta(minutes=30),
             status="scheduled",
-            pet_info=appt_in.pet_info,
+            pet_info=pet_info,
             meet_link=meet_link
         )
         db.add(new_appt)
         await db.commit()
-
-        yandex_url = None
-        doc_prof = assigned_doctor.doctor_profile
         
+        # Привязываем файлы
+        for f_data in uploaded_file_ids:
+            af = AppointmentFile(
+                appointment_id=new_appt.id, 
+                mongo_file_id=f_data["id"], 
+                filename=f_data["name"]
+            )
+            db.add(af)
+        
+        # Яндекс Календарь
         if doc_prof and doc_prof.yandex_email and doc_prof.yandex_password:
-            user_name = current_user.full_name or "Без имени"
-            user_phone = current_user.phone or ""
-            
+            files_desc = f"\nФайлов прикреплено: {len(uploaded_file_ids)}" if uploaded_file_ids else ""
             yandex_url = create_yandex_event(
-                start_time=start_time_tz,
-                summary=f"🩺 Пациент: {appt_in.pet_info}",
-                description=f"Оплата с баланса.\nКлиент: {user_name}\nТелефон: {user_phone}",
+                start_time=start_dt,
+                summary=f"🩺 Пациент: {pet_info}",
+                description=f"Оплата балансом.\nКлиент: {current_user.full_name}\nТелефон: {current_user.phone}{files_desc}",
                 email=doc_prof.yandex_email,
                 password=doc_prof.yandex_password
             )
-            
-            # Если событие создалось, сохраняем ссылку в БД
             if yandex_url:
-                await db.execute(
-                    update(Appointment)
-                    .where(Appointment.id == new_appt.id)
-                    .values(google_event_id=yandex_url)
-                )
-                await db.commit()
-                
+                await db.execute(update(Appointment).where(Appointment.id == new_appt.id).values(google_event_id=yandex_url))
+        
+        await db.commit()
         await redis_client.delete(redis_key)
         
-        # --- УВЕДОМЛЕНИЯ ПРИ ОПЛАТЕ С БАЛАНСА ---
-        time_str = start_time_tz.strftime('%d.%m.%Y %H:%M')
+        # Уведомления
+        files_msg = "\n".join([f"📎 {f['name']}" for f in uploaded_file_ids])
+        time_str = start_dt.strftime('%d.%m.%Y %H:%M')
         
-        # 1. Суперадмину
-        await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, f"💰 <b>Запись с баланса!</b>\n📅 {time_str}\nВрач: {assigned_doctor.full_name}\n🐶 {appt_in.pet_info}")
-        
-        # 2. Врачу
-        if assigned_doctor.telegram_id:
-            await send_telegram_message(assigned_doctor.telegram_id, f"🩺 <b>Новая запись!</b>\n📅 {time_str}\n🐶 {appt_in.pet_info}")
+        # Суперадмину
+        await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, f"💰 <b>Запись с баланса!</b>\n📅 {time_str}\nВрач: {doctor.full_name}\n🐶 {pet_info}")
+
+        # Врачу
+        if doctor.telegram_id:
+            await send_telegram_message(doctor.telegram_id, f"🩺 <b>Новая запись (баланс)!</b>\n📅 {time_str}\n🐶 {pet_info}\n🔗 {meet_link}\n{files_msg}")
         
         # 3. Клиенту
         if current_user.telegram_id:
-            await send_telegram_message(current_user.telegram_id, f"✅ <b>Запись подтверждена!</b>\n📅 {time_str}\nВрач: {assigned_doctor.full_name or 'Специалист'}\n🔗 <a href='{meet_link}'>Ссылка на звонок</a>")
+            await send_telegram_message(current_user.telegram_id, f"✅ <b>Запись подтверждена!</b>\n📅 {time_str}\nВрач: {doctor.full_name or 'Специалист'}\n🔗 <a href='{meet_link}'>Ссылка на звонок</a>")
 
         return {"message": "Оплачено с баланса", "payment_url": None, "slot": slot_time}
 
-    # --- ЗАПИСЬ ЧЕРЕЗ ЮКАССУ ---
+    # --- ВАРИАНТ Б: ЮКАССА ---
+    # Передаем файлы в метаданных (ID|NAME,ID|NAME)
+    files_meta_str = ",".join([f"{f['id']}|{f['name']}" for f in uploaded_file_ids])
+
     metadata = {
         "type": "appointment",
         "user_id": str(current_user.id),
-        "doctor_id": str(assigned_doctor.id), # <--- Точно знаем, к кому
+        "doctor_id": str(doctor_id),
         "start_time": slot_time.isoformat(),
-        "pet_info": appt_in.pet_info or "Не указано"
+        "pet_info": pet_info[:200], 
+        "files_data": files_meta_str[:450] # Лимит юкассы 500
     }
     
     payment_url = await create_payment_url(
         amount=2000.00,
-        description=f"Консультация: {assigned_doctor.full_name or 'Врач'} ({slot_time.strftime('%d.%m.%Y %H:%M')})",
+        description=f"Консультация: {doctor.full_name}",
         metadata=metadata,
         return_url="https://твой-сайт.ru/profile"
     )
+    
     return {"message": "Забронировано", "payment_url": payment_url, "slot": slot_time}
+
+
+# --- 4. УПРАВЛЕНИЕ ЗАПИСЯМИ ---
 
 @router.get("/me", response_model=List[AppointmentResponse])
 async def get_my_appointments(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Appointment)
-        .options(selectinload(Appointment.doctor))
-        .where(Appointment.user_id == current_user.id)
-        .order_by(Appointment.start_time.desc())
-    )
+    # Если юзер - врач, он должен видеть записи, где он DOCTOR_ID
+    if current_user.role == "doctor":
+        query = select(Appointment).where(Appointment.doctor_id == current_user.id)
+    else:
+        # Обычный юзер видит свои записи
+        query = select(Appointment).where(Appointment.user_id == current_user.id)
+    
+    # Подгружаем доктора и файлы
+    query = query.options(selectinload(Appointment.doctor), selectinload(Appointment.files))
+    query = query.order_by(Appointment.start_time.desc())
+    
+    result = await db.execute(query)
     appts = result.scalars().all()
     
     moscow_tz = ZoneInfo("Europe/Moscow")
@@ -303,24 +387,18 @@ async def get_my_appointments(current_user: User = Depends(get_current_user), db
 
 @router.patch("/{appt_id}/refresh-link", response_model=AppointmentResponse)
 async def refresh_appointment_link(appt_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    # Подгружаем врача и его профиль
-    appt_query = await db.execute(
-        select(Appointment)
-        .options(selectinload(Appointment.doctor).selectinload(User.doctor_profile))
-        .where(Appointment.id == appt_id)
-    )
-    appt = appt_query.scalars().first()
+    query = select(Appointment).options(selectinload(Appointment.doctor).selectinload(User.doctor_profile)).where(Appointment.id == appt_id)
+    res = await db.execute(query)
+    appt = res.scalars().first()
 
-    if not appt or appt.user_id != current_user.id:
+    if not appt or (appt.user_id != current_user.id and appt.doctor_id != current_user.id):
         raise HTTPException(status_code=404)
         
-    # Берем ссылку ИЗ ПРОФИЛЯ ВРАЧА
     doc_profile = appt.doctor.doctor_profile
     new_link = doc_profile.telemost_link if doc_profile and doc_profile.telemost_link else settings.YANDEX_TELEMOST_LINK
     
     appt.meet_link = new_link
     await db.commit()
-        
     return appt
 
 @router.patch("/{appt_id}/rating")
@@ -329,20 +407,15 @@ async def rate_appointment(appt_id: int, payload: RatingUpdate, current_user: Us
     appt = await db.get(Appointment, appt_id)
     if not appt or appt.user_id != current_user.id:
         raise HTTPException(status_code=404)
-        
     appt.rating = payload.rating
     await db.commit()
     return {"status": "ok"}
 
 @router.post("/{appt_id}/cancel")
 async def cancel_appointment(appt_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    # Подгружаем врача с профилем (нужны креды Яндекса)
-    appt_query = await db.execute(
-        select(Appointment)
-        .options(selectinload(Appointment.doctor).selectinload(User.doctor_profile))
-        .where(Appointment.id == appt_id)
-    )
-    appt = appt_query.scalars().first()
+    query = select(Appointment).options(selectinload(Appointment.doctor).selectinload(User.doctor_profile)).where(Appointment.id == appt_id)
+    res = await db.execute(query)
+    appt = res.scalars().first()
 
     if not appt or appt.user_id != current_user.id:
         raise HTTPException(status_code=404)
@@ -371,15 +444,17 @@ async def cancel_appointment(appt_id: int, current_user: User = Depends(get_curr
     
     return {"status": "ok", "message": "Запись отменена, средства вернулись на баланс."}
 
+
+# --- 5. УПРАВЛЕНИЕ РАСПИСАНИЕМ (ДЛЯ ВРАЧА) ---
+
 @router.get("/doctor/schedule", response_model=List[DoctorDayScheduleResponse])
 async def get_doctor_schedule(target_date: date, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Отдает врачу картину его дня для управления слотами"""
     if current_user.role not in ["doctor", "superadmin"]:
         raise HTTPException(status_code=403)
         
-    # Подгружаем профиль, чтобы знать расписание врача
-    prof_res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == current_user.id))
-    doc_prof = prof_res.scalars().first()
+    res = await db.execute(select(DoctorProfile).where(DoctorProfile.user_id == current_user.id))
+    doc_prof = res.scalars().first()
     
     start_h = WORK_START_HOUR
     end_h = WORK_END_HOUR
@@ -391,7 +466,7 @@ async def get_doctor_schedule(target_date: date, current_user: User = Depends(ge
     
     current_time = datetime.combine(target_date, time(start_h, 0))
     end_time = datetime.combine(target_date, time(end_h, 0))
-    all_slots =[]
+    all_slots = []
     while current_time < end_time:
         all_slots.append(current_time)
         current_time += timedelta(minutes=duration)
@@ -409,18 +484,16 @@ async def get_doctor_schedule(target_date: date, current_user: User = Depends(ge
     )
     appointments = db_res.scalars().all()
 
-    # Достаем Яндекс
-    yandex_slots =[]
+    yandex_slots = []
     if doc_prof and doc_prof.yandex_email:
         yandex_slots = get_busy_slots_yandex(start_of_day, end_of_day, doc_prof.yandex_email, doc_prof.yandex_password)
 
-    schedule =[]
+    schedule = []
     for slot in all_slots:
         slot_end = slot + timedelta(minutes=duration)
         state = "free"
         appt_id = None
         
-        # Проверяем БД
         for appt in appointments:
             appt_start = appt.start_time.astimezone(moscow_tz).replace(tzinfo=None) if appt.start_time.tzinfo else appt.start_time.replace(tzinfo=None)
             if appt_start == slot:
@@ -428,7 +501,6 @@ async def get_doctor_schedule(target_date: date, current_user: User = Depends(ge
                 appt_id = appt.id
                 break
                 
-        # Проверяем Яндекс (если свободно в БД)
         if state == "free":
             for b_start, b_end in yandex_slots:
                 if not (slot_end <= b_start or slot >= b_end):
@@ -450,48 +522,40 @@ async def manage_doctor_blocks(req: ManageBlocksRequest, current_user: User = De
     duration = CONSULTATION_DURATION_MINUTES
     moscow_tz = ZoneInfo("Europe/Moscow")
 
-    # 1. РАЗБЛОКИРОВКА (Удаляем технические записи)
+    # 1. РАЗБЛОКИРОВКА
     for time_str in req.to_unblock:
         slot_time = datetime.strptime(f"{req.date} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=moscow_tz)
-        
-        # Ищем блок
         res = await db.execute(select(Appointment).where(
             Appointment.doctor_id == current_user.id,
             Appointment.start_time == slot_time,
             Appointment.status == "blocked"
         ))
         appt = res.scalars().first()
-        
         if appt:
-            # Удаляем из Яндекса
             if appt.google_event_id and doc_prof and doc_prof.yandex_email:
                 delete_yandex_event(appt.google_event_id, doc_prof.yandex_email, doc_prof.yandex_password)
-            # Удаляем из БД
             await db.delete(appt)
 
-    # 2. БЛОКИРОВКА (Создаем технические записи)
+    # 2. БЛОКИРОВКА
     for time_str in req.to_block:
         slot_time = datetime.strptime(f"{req.date} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=moscow_tz)
-        
-        # Проверяем, нет ли уже чего-то на это время
         res = await db.execute(select(Appointment).where(
             Appointment.doctor_id == current_user.id,
             Appointment.start_time == slot_time,
             Appointment.status.in_(["scheduled", "completed", "blocked"])
         ))
-        if res.scalars().first():
-            continue # Пропускаем, если уже занято
+        if res.scalars().first(): continue
             
         new_appt = Appointment(
             user_id=current_user.id, 
             doctor_id=current_user.id,
             start_time=slot_time,
             end_time=slot_time + timedelta(minutes=duration),
-            status="blocked", # ТЕПЕРЬ СПЕЦИАЛЬНЫЙ СТАТУС!
+            status="blocked", 
             pet_info="🔒 Заблокировано врачом"
         )
         db.add(new_appt)
-        await db.commit() # Получаем ID
+        await db.commit()
         
         if doc_prof and doc_prof.yandex_email:
             yandex_url = create_yandex_event(
@@ -499,8 +563,7 @@ async def manage_doctor_blocks(req: ManageBlocksRequest, current_user: User = De
                 email=doc_prof.yandex_email, password=doc_prof.yandex_password
             )
             if yandex_url:
-                new_appt.google_event_id = yandex_url
+                await db.execute(update(Appointment).where(Appointment.id == new_appt.id).values(google_event_id=yandex_url))
                 await db.commit()
 
-    await db.commit()
     return {"status": "ok"}

@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 import { formatPhone } from '../lib/utils';
 import { toast } from 'sonner';
-import { UserCircle, Download, Book, Loader2, Save, Calendar, Video, RefreshCw, ChevronDown, ChevronUp, Star, Phone, XCircle, Stethoscope } from 'lucide-react';
+import { UserCircle, Download, Book, Loader2, Save, Calendar, Video, RefreshCw, ChevronDown, ChevronUp, Star, Phone, XCircle, Stethoscope, Paperclip, FileText, Upload } from 'lucide-react';
 
 export default function Profile() {
   const { user, checkAuth } = useAuthStore();
@@ -22,6 +22,8 @@ export default function Profile() {
   const [phoneCode, setPhoneCode] = useState('');
   const [needBot, setNeedBot] = useState(false);
 
+  const isDoctor = user?.role === 'doctor' || user?.role === 'superadmin';
+
   const fetchAppointments = () => {
     apiClient.get('/appointments/me')
       .then(res => setAppointments(res.data))
@@ -30,7 +32,7 @@ export default function Profile() {
   };
 
   useEffect(() => {
-    apiClient.get('/users/me/guides').then(res => setGuides(res.data)).finally(() => setLoadingGuides(false));
+        apiClient.get('/users/me/guides').then(res => setGuides(res.data)).finally(() => setLoadingGuides(false));
     fetchAppointments();
   },[]);
 
@@ -129,6 +131,23 @@ export default function Profile() {
       toast.error("Неверный код. Попробуйте еще раз.");
       console.error("Ошибка при подтверждении кода", e);
     }
+  };
+
+  // Загрузка протокола (только для врача)
+  const handleUploadProtocol = async (apptId, file) => {
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const toastId = toast.loading("Загрузка заключения...");
+      try {
+          await apiClient.post(`/appointments/${apptId}/protocol`, formData);
+          toast.success("Заключение отправлено!", { id: toastId });
+          fetchAppointments();
+      } catch (e) {
+          toast.error("Ошибка загрузки", { id: toastId });
+          console.error("Ошибка при загрузке заключения", e);
+      }
   };
 
   const upcomingAppts = appointments.filter(a => a.status === 'scheduled');
@@ -262,9 +281,10 @@ export default function Profile() {
         </div>
       </div>
 
-      {/* --- ПРЕДСТОЯЩИЕ ЗАПИСИ --- */}
+      {/* ПРЕДСТОЯЩИЕ ЗАПИСИ */}
       <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-        <Calendar className="w-6 h-6 text-primary" /> Предстоящие приемы
+        <Calendar className="w-6 h-6 text-primary" /> 
+        {isDoctor ? "Мои пациенты (Предстоящие)" : "Предстоящие приемы"}
       </h2>
       
       {loadingAppts ? (
@@ -278,28 +298,46 @@ export default function Profile() {
           {upcomingAppts.map(appt => (
             <div key={appt.id} className="bg-white rounded-2xl p-6 shadow-sm border border-emerald-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden">
               <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
-              <div>
-                <div className="text-lg font-bold text-gray-900 mb-1">{formatDateTime(appt.start_time)}</div>
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                   <Stethoscope className="w-4 h-4 text-emerald-500" />
-                   {appt.doctor?.full_name || "Специалист"}
-                </div>
-                <div className="text-sm text-gray-500 bg-gray-50 inline-block px-3 py-1 rounded-lg">Пациент: {appt.pet_info || 'Не указано'}</div>
-              </div>
+                  <div>
+                    <div className="text-lg font-bold text-gray-900 mb-1">
+                      {formatDateTime(appt.start_time)}
+                    </div>
+                    
+                    {/* Если я Врач - показываю пациента, если Пациент - врача */}
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                       <Stethoscope className="w-4 h-4 text-emerald-500" />
+                       {isDoctor ? "Пациент (из анкеты):" : appt.doctor?.full_name || "Специалист"}
+                    </div>
+
+                    <div className="text-sm text-gray-500 bg-gray-50 inline-block px-3 py-1 rounded-lg">Пациент: {appt.pet_info || 'Не указано'}</div>
+
+                    {/* ФАЙЛЫ АНАЛИЗОВ */}
+                    {appt.files && appt.files.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {appt.files.map(f => (
+                                <a key={f.id} href={`/api/appointments/files/${f.mongo_file_id}`} target="_blank" rel="noreferrer" className="text-xs bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-100 flex items-center gap-1 hover:bg-blue-100 transition">
+                                    <Paperclip className="w-3 h-3" /> {f.filename}
+                                </a>
+                            ))}
+                        </div>
+                    )}
+                  </div>
               <div className="flex flex-col sm:flex-row gap-3">
-                {appt.meet_link ? (
+                    {appt.meet_link ? (
                   <a href={appt.meet_link} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 bg-blue-50 text-blue-600 px-5 py-2.5 rounded-xl font-medium hover:bg-blue-100 transition">
-                    <Video className="w-5 h-5" /> Подключиться
-                  </a>
-                ) : (
+                        <Video className="w-5 h-5" /> Подключиться
+                      </a>
+                    ) : (
                   <button onClick={() => handleRefreshLink(appt.id)} disabled={updatingLinkId === appt.id} className="flex items-center justify-center gap-2 bg-amber-50 text-amber-600 px-5 py-2.5 rounded-xl font-medium border border-amber-100 hover:bg-amber-100 transition">
-                    <RefreshCw className={`w-5 h-5 ${updatingLinkId === appt.id ? 'animate-spin' : ''}`} /> Ссылка
-                  </button>
-                )}
-                {/* КНОПКА ОТМЕНЫ */}
-                <button onClick={() => handleCancel(appt.id)} className="flex items-center justify-center gap-2 bg-red-50 text-red-600 px-4 py-2.5 rounded-xl font-medium border border-red-100 hover:bg-red-100 transition">
-                  <XCircle className="w-5 h-5" /> Отменить
-                </button>
+                    <RefreshCw className={`w-5 h-5 ${updatingLinkId === appt.id ? 'animate-spin' : ''}`} /> Обновить ссылку
+                      </button>
+                    )}
+                    
+                    {!isDoctor && (
+                        <button onClick={() => handleCancel(appt.id)} className="flex items-center justify-center gap-2 bg-white text-red-500 px-4 py-2 rounded-xl font-medium border border-red-100 hover:bg-red-50 transition text-sm">
+                        <XCircle className="w-4 h-4" /> Отменить
+                        </button>
+                    )}
               </div>
             </div>
           ))}
@@ -308,7 +346,7 @@ export default function Profile() {
 
       {/* --- ИСТОРИЯ ЗАПИСЕЙ --- */}
       {historyAppts.length > 0 && (
-        <div className="mb-12">
+          <div className="mb-12">
           <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-lg font-bold text-gray-600 hover:text-gray-900 transition">
             История приемов {showHistory ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
           </button>
@@ -325,7 +363,25 @@ export default function Profile() {
                       <Stethoscope className="w-4 h-4 text-emerald-500" />
                       {appt.doctor?.full_name || "Специалист"}
                     </div>
-                    <div className="text-sm text-gray-500">Пациент: {appt.pet_info || 'Не указано'}</div>
+                    <div className="text-sm text-gray-500">{appt.pet_info || 'Не указано'}</div>
+                  </div>
+                  {/* ЗАКЛЮЧЕНИЕ */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                      {appt.protocol_file_id ? (
+                          <a href={`/api/appointments/files/${appt.protocol_file_id}`} target="_blank" className="flex items-center gap-2 text-emerald-700 font-bold hover:underline">
+                              <FileText className="w-5 h-5"/> Скачать заключение врача
+                          </a>
+                      ) : isDoctor && appt.status !== 'canceled' ? (
+                          <label className="flex items-center gap-2 cursor-pointer text-blue-600 hover:text-blue-800 transition">
+                              <Upload className="w-4 h-4"/>
+                              <span className="text-sm font-medium">Загрузить заключение (PDF)</span>
+                              <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleUploadProtocol(appt.id, e.target.files[0])} />
+                          </label>
+                      ) : (
+                          <div>
+                            {appt.status !== 'canceled' && <span className="text-gray-400 text-sm">Заключение еще не готово</span>}
+                          </div>
+                      )}
                   </div>
                   
                   {appt.status === 'completed' && (
@@ -341,14 +397,14 @@ export default function Profile() {
                         ))}
                       </div>
                     </div>
-                  )}
+                    )}
                 </div>
               ))}
             </div>
           )}
-        </div>
+          </div>
       )}
-      
+
       {/* ... Блок "Мои гайды" ... */}
       <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
         <Book className="w-6 h-6 text-primary" />
