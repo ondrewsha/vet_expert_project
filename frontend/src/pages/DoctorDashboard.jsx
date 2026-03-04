@@ -21,6 +21,8 @@ export default function DoctorDashboard() {
   const [existingPdf, setExistingPdf] = useState(false);
   const [existingPdfName, setExistingPdfName] = useState(null);
   const [loadingGuide, setLoadingGuide] = useState(false);
+  const [guideType, setGuideType] = useState('upload');
+  const [guideContent, setGuideContent] = useState('');
 
   // --- Стейты Умного Расписания ---
   const today = new Date();
@@ -29,7 +31,7 @@ export default function DoctorDashboard() {
   const [scheduleDate, setScheduleDate] = useState(defaultDate);
   const [scheduleSlots, setScheduleSlots] = useState([]); 
   const [loadingSchedule, setLoadingSchedule] = useState(false);
-  const[savingSchedule, setSavingSchedule] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
   
   const [toBlock, setToBlock] = useState([]);
   const [toUnblock, setToUnblock] = useState([]);
@@ -221,6 +223,16 @@ export default function DoctorDashboard() {
       setDescription(guide.description || '');
       setSnippet(guide.free_snippet || '');
       setPrice(guide.price);
+
+      // Выставляем тип: если есть текст, значит он написан на сайте
+      if (guide.content) {
+          setGuideType('write');
+          setGuideContent(guide.content);
+      } else {
+          setGuideType('upload');
+          setGuideContent('');
+      }
+
       setFile(null); setCover(null);
       setExistingCoverUrl(guide.cover_image_id ? `/api/guides/${guide.id}/cover` : null);
       setExistingPdf(!!guide.mongo_file_id);
@@ -229,13 +241,20 @@ export default function DoctorDashboard() {
 
   const cancelEditing = () => {
       setEditingGuideId(null);
-      setTitle(''); setDescription(''); setSnippet(''); setPrice(''); setFile(null); setCover(null);
+      setTitle(''); setDescription(''); setSnippet(''); setPrice(''); 
+      setGuideContent(''); setGuideType('upload'); // Сбрасываем
+      setFile(null); setCover(null);
       setExistingCoverUrl(null); setExistingPdf(false); setExistingPdfName(null);
   };
 
   const handleGuideSubmit = async (e) => {
     e.preventDefault();
-    if (!editingGuideId && !file) return toast.error("Для нового гайда обязательно выберите PDF файл");
+    if (!editingGuideId && guideType === 'upload' && !file) {
+        return toast.error("Для нового гайда выберите PDF файл");
+    }
+    if (!editingGuideId && guideType === 'write' && !guideContent) {
+        return toast.error("Напишите текст гайда");
+    }
 
     setLoadingGuide(true);
     const formData = new FormData();
@@ -243,15 +262,20 @@ export default function DoctorDashboard() {
     if (description) formData.append('description', description);
     if (snippet) formData.append('free_snippet', snippet);
     if (price) formData.append('price', price);
-    if (file) formData.append('file', file);
-    if (cover) formData.append('cover', cover); 
+    if (cover) formData.append('cover', cover);
+
+    if (guideType === 'upload' && file) {
+        formData.append('file', file);
+    } else if (guideType === 'write') {
+        formData.append('content', guideContent);
+    }
 
     try {
       if (editingGuideId) {
-          await apiClient.patch(`/guides/${editingGuideId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          await apiClient.patch(`/guides/${editingGuideId}`, formData);
           toast.success("Гайд успешно обновлен!");
       } else {
-          await apiClient.post('/guides', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+          await apiClient.post('/guides', formData);
           toast.success("Новый гайд опубликован!");
       }
       cancelEditing();
@@ -446,34 +470,51 @@ export default function DoctorDashboard() {
                     </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-2">
-                        {/* ФАЙЛ PDF */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Полная версия (PDF) {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}</label>
-                            <label className={`relative flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${file || existingPdf ? 'border-primary bg-emerald-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
-                                {file ? (
-                                    <div className="flex flex-col items-center p-2 text-center z-10">
-                                        <UploadCloud className="w-6 h-6 mb-1 text-primary" />
-                                        <p className="text-xs font-medium text-gray-700 truncate w-full px-2">{file.name}</p>
-                                        <p className="text-[10px] text-emerald-600 mt-1">Новый файл выбран</p>
-                                    </div>
-                                ) : existingPdf ? (
-                                    <div className="flex flex-col items-center p-2 text-center z-10">
-                                        <CheckCircle className="w-6 h-6 mb-1 text-primary" />
-                                        <p className="text-xs font-bold text-emerald-800 line-clamp-1 w-full px-2">{existingPdfName || 'PDF загружен'}</p>
-                                        <p className="text-[10px] text-emerald-600 mt-1">Текущий файл (Нажмите для замены)</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col items-center p-2 text-center z-10">
-                                        <UploadCloud className="w-6 h-6 mb-1 text-gray-400" />
-                                        <p className="text-xs font-medium text-gray-500">Выбрать PDF</p>
-                                    </div>
-                                )}
-                                <input type="file" accept="application/pdf" className="hidden" onChange={e => setFile(e.target.files[0])} />
-                            </label>
+                        {/* ФАЙЛ PDF ИЛИ РЕДАКТОР */}
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Содержимое гайда</label>
+                            
+                            {/* Переключатель */}
+                            <div className="flex bg-gray-100 p-1 rounded-xl mb-3">
+                                <button type="button" onClick={() => setGuideType('upload')} className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition ${guideType === 'upload' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>Загрузить PDF</button>
+                                <button type="button" onClick={() => setGuideType('write')} className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition ${guideType === 'write' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>Написать на сайте</button>
+                            </div>
+
+                            {guideType === 'upload' ? (
+                                <label className={`relative flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${file || existingPdf ? 'border-primary bg-emerald-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
+                                    {file ? (
+                                        <div className="flex flex-col items-center p-2 text-center z-10">
+                                            <UploadCloud className="w-6 h-6 mb-1 text-primary" />
+                                            <p className="text-xs font-medium text-gray-700 truncate w-full px-2">{file.name}</p>
+                                        </div>
+                                    ) : existingPdf ? (
+                                        <div className="flex flex-col items-center p-2 text-center z-10">
+                                            <CheckCircle className="w-6 h-6 mb-1 text-primary" />
+                                            <p className="text-xs font-bold text-emerald-800 line-clamp-1 w-full px-2">{existingPdfName || 'PDF загружен'}</p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center p-2 text-center z-10">
+                                            <UploadCloud className="w-6 h-6 mb-1 text-gray-400" />
+                                            <p className="text-xs font-medium text-gray-500">Выбрать PDF</p>
+                                        </div>
+                                    )}
+                                    <input type="file" accept="application/pdf" className="hidden" onChange={e => setFile(e.target.files[0])} />
+                                </label>
+                            ) : (
+                                <div>
+                                    <textarea 
+                                        rows="6" 
+                                        value={guideContent} 
+                                        onChange={e => setGuideContent(e.target.value)} 
+                                        placeholder="Пишите текст здесь. Короткие строки автоматически станут подзаголовками, а платформа сама сверстает красивый PDF с титульным листом!" 
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none transition"
+                                    ></textarea>
+                                </div>
+                            )}
                         </div>
 
                         {/* ОБЛОЖКА */}
-                        <div>
+                        <div className="sm:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-2">Обложка {editingGuideId && <span className="text-xs text-amber-500 font-normal ml-2">Опционально</span>}</label>
                             <label className={`relative flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition overflow-hidden ${cover || existingCoverUrl ? 'border-blue-400 bg-blue-50' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'}`}>
                                 {cover ? (

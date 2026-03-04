@@ -88,7 +88,11 @@ export default function Profile() {
         });
         toast.success("Протокол создан и отправлен!");
         setIsProtocolModalOpen(false);
-        fetchAppointments();
+        fetchAppointments(); // убираем из предстоящих
+        
+        // Сбрасываем и обновляем историю записей, чтобы отчет сразу появился там
+        setHistory([]);
+        loadHistoryData(0); 
     } catch (e) {
         toast.error("Ошибка создания протокола");
         console.error("Ошибка создания протокола", e);
@@ -386,6 +390,16 @@ export default function Profile() {
                     ) : (
                   <button onClick={() => handleRefreshLink(appt.id)} disabled={updatingLinkId === appt.id} className="flex items-center justify-center gap-2 bg-amber-50 text-amber-600 px-5 py-2.5 rounded-xl font-medium border border-amber-100 hover:bg-amber-100 transition">
                     <RefreshCw className={`w-5 h-5 ${updatingLinkId === appt.id ? 'animate-spin' : ''}`} /> Обновить ссылку
+                      </button>
+                    )}
+
+                    {/* КНОПКА ЗАВЕРШЕНИЯ (ДЛЯ ВРАЧА) */}
+                    {isDoctor && (
+                      <button 
+                        onClick={() => openProtocolModal(appt)}
+                        className="flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl font-medium border border-emerald-100 hover:bg-emerald-100 transition text-sm"
+                      >
+                        <FileText className="w-4 h-4" /> Написать отчет
                       </button>
                     )}
                     

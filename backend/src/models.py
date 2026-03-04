@@ -54,6 +54,7 @@ class Guide(Base):
     author_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     title: Mapped[str] = mapped_column(String)
     description: Mapped[str] = mapped_column(Text) # Обязательное описание
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     free_snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # Бесплатный фрагмент
     price: Mapped[float] = mapped_column(Numeric(10, 2))
     mongo_file_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)

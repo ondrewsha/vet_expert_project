@@ -10,6 +10,7 @@ from src.database import get_db, fs
 from src.models import Guide, User, Purchase, Like, Comment
 from src.schemas.schemas import GuideCreate, GuideResponse, GuideDetailResponse, CommentCreate, CommentResponse
 from src.core.security import get_current_user, get_current_user_optional
+from src.services.pdf_service import generate_guide_pdf
 
 router = APIRouter(prefix="/api/guides", tags=["Guides"])
 
@@ -112,7 +113,8 @@ async def create_guide(
         description: str = Form(...),
         price: float = Form(...),
         free_snippet: str = Form(None),
-        file: UploadFile = File(...),
+        content: str = Form(None),
+        file: UploadFile = File(None),
         cover: UploadFile = File(None),
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
@@ -120,11 +122,32 @@ async def create_guide(
     if current_user.role not in ["doctor", "superadmin"]:
         raise HTTPException(status_code=403, detail="Нет прав")
 
-    file_id = await fs.upload_from_stream(
-        filename=file.filename,
-        source=file.file,
-        metadata={"content_type": file.content_type}
-    )
+    # Обработка PDF
+    file_id_str = None
+    pdf_filename = None
+    
+    if content:
+        # Генерируем PDF из текста
+        author_name = current_user.full_name or "Врач"
+        pdf_buffer = generate_guide_pdf(title, author_name, content)
+        file_id = await fs.upload_from_stream(
+            filename=f"{title}.pdf",
+            source=pdf_buffer,
+            metadata={"content_type": "application/pdf"}
+        )
+        file_id_str = str(file_id)
+        pdf_filename = f"{title}.pdf"
+    elif file:
+        # Загружаем готовый PDF
+        file_id = await fs.upload_from_stream(
+            filename=file.filename,
+            source=file.file,
+            metadata={"content_type": file.content_type}
+        )
+        file_id_str = str(file_id)
+        pdf_filename = file.filename
+    else:
+        raise HTTPException(status_code=400, detail="Необходимо прикрепить файл или написать текст гайда")
 
     cover_id = None
     if cover:
@@ -132,8 +155,8 @@ async def create_guide(
         cover_id = str(cover_id)
     
     new_guide = Guide(
-        title=title, description=description, free_snippet=free_snippet,
-        price=price, mongo_file_id=str(file_id), pdf_filename=file.filename,
+        title=title, description=description, free_snippet=free_snippet, content=content,
+        price=price, mongo_file_id=file_id_str, pdf_filename=pdf_filename,
         author_id=current_user.id, cover_image_id=cover_id
     )
     db.add(new_guide)
@@ -248,6 +271,7 @@ async def update_guide(
         description: str = Form(None),
         price: float = Form(None),
         free_snippet: str = Form(None),
+        content: str = Form(None),
         file: UploadFile = File(None),  # Если передали - обновляем PDF
         cover: UploadFile = File(None), # Если передали - обновляем обложку
         db: AsyncSession = Depends(get_db),
@@ -267,13 +291,22 @@ async def update_guide(
     if description: guide.description = description
     if price is not None: guide.price = price
     if free_snippet is not None: guide.free_snippet = free_snippet
+    if content is not None: guide.content = content
 
     # Если загрузили новый PDF
     if file:
         file_id = await fs.upload_from_stream(filename=file.filename, source=file.file, metadata={"content_type": file.content_type})
         guide.mongo_file_id = str(file_id)
         guide.pdf_filename = file.filename
-        # (По-хорошему тут надо удалить старый файл из MongoDB, но для простоты пока оставим как историю)
+        guide.content = None
+    elif content:
+        # Обновили текст, перегенерируем PDF
+        author = await db.get(User, guide.author_id)
+        author_name = author.full_name or "Врач"
+        pdf_buffer = generate_guide_pdf(guide.title, author_name, content)
+        file_id = await fs.upload_from_stream(filename=f"{guide.title}.pdf", source=pdf_buffer, metadata={"content_type": "application/pdf"})
+        guide.mongo_file_id = str(file_id)
+        guide.pdf_filename = f"{guide.title}.pdf"
 
     # Если загрузили новую обложку
     if cover:

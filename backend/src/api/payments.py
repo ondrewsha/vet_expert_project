@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 
 from src.database import get_db, redis_client
-from src.models import Appointment, Guide, User, DoctorProfile, AppointmentFile
+from src.models import Appointment, Guide, User, DoctorProfile, AppointmentFile, Purchase
 from src.core.security import get_current_user
 from src.services.telegram_service import send_telegram_message
 from src.services.yookassa_service import create_payment_url
@@ -122,9 +122,10 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
             
             elif metadata.get("type") == "guide":
                 user_id = int(metadata.get("user_id"))
+                user_name = metadata.get("user_name")
                 guide_id = int(metadata.get("guide_id"))
-                
-                from src.models import Purchase
+                guide_price = float(metadata.get("guide_price"))
+                guide_title = metadata.get("guide_title")
                 
                 # Создаем запись о покупке
                 new_purchase = Purchase(
@@ -140,7 +141,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 # Шлем уведомление врачу (чтобы он порадовался)
                 await send_telegram_message(
                     settings.TG_SUPER_ADMIN_CHAT_ID, 
-                    f"📚 <b>Куплен гайд!</b>\nПользователь {user_id} купил гайд #{guide_id}."
+                    f"📚 <b>Куплен гайд!</b>\nПользователь {user_id} ({user_name}) купил гайд #{guide_id} ({guide_title}, {guide_price})."
                 )
                 
     except Exception as e:
@@ -162,12 +163,26 @@ async def buy_guide(
     guide = await db.get(Guide, guide_id)
     if not guide:
         raise HTTPException(status_code=404, detail="Гайд не найден")
+    
+    # Проверяем покупку
+    purchase = await db.execute(
+        select(Purchase).where(
+            Purchase.user_id == current_user.id,
+            Purchase.guide_id == guide_id,
+            Purchase.status == "succeeded"
+        )
+    )
+    if purchase.scalars().first():
+        return {"message": "Вы уже купили этот гайд! Он доступен в вашем профиле."}
         
     # 2. Формируем метаданные для вебхука (тип = guide)
     metadata = {
         "type": "guide",
         "user_id": str(current_user.id),
-        "guide_id": str(guide.id)
+        "user_name": current_user.full_name or "Без имени",
+        "guide_id": str(guide.id),
+        "guide_title": guide.title,
+        "guide_price": str(guide.price)
     }
     
     # 3. Создаем платеж

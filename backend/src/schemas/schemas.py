@@ -40,6 +40,7 @@ class CommentResponse(CommentBase):
 class GuideBase(BaseModel):
     title: str
     description: str
+    content: Optional[str] = None
     free_snippet: Optional[str] = None
     price: float
     is_active: bool = True
@@ -135,6 +136,8 @@ class UserUpdate(BaseModel):
 class AppointmentBase(BaseModel):
     start_time: datetime
     pet_info: Optional[str] = None
+    pet_name: Optional[str] = None
+    pet_details: Optional[str] = None
 
 class AppointmentCreate(AppointmentBase):
     doctor_id: Optional[int] = None

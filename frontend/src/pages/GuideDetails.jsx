@@ -60,7 +60,11 @@ export default function GuideDetails() {
     if (!isAuthenticated) return navigate('/login');
     try {
       const res = await apiClient.post(`/payments/buy-guide/${id}`);
-      window.location.assign(res.data.payment_url);
+      if (res.data.payment_url) {
+        window.location.assign(res.data.payment_url);
+      } else if (res.data.message) {
+        toast.info(res.data.message);
+      }
     } catch (e) {
       toast.error("Ошибка оплаты");
       console.error("Ошибка оплаты", e)
