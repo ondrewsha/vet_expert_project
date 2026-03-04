@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import List
 import random
@@ -29,7 +29,18 @@ class DoctorSettingsUpdate(BaseModel):
 @router.get("/me", response_model=UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.id == current_user.id))
-    return res.scalars().first()
+    user = res.scalars().first()
+    
+    # Если это врач, считаем его средний рейтинг
+    if user and user.role in ["doctor", "superadmin"]:
+        rating_res = await db.execute(
+            select(func.avg(Appointment.rating))
+            .where(Appointment.doctor_id == user.id)
+            .where(Appointment.rating.isnot(None))
+        )
+        user.average_rating = rating_res.scalar()
+        
+    return user
 
 @router.patch("/me", response_model=UserResponse)
 async def update_users_me(

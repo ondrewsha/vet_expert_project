@@ -100,6 +100,7 @@ class DoctorResponse(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None # Добавим телефон, может пригодиться
     doctor_profile: Optional[DoctorProfileResponse] = None
+    average_rating: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -110,6 +111,7 @@ class DoctorAdminResponse(BaseModel):
     full_name: Optional[str] = None
     phone: str
     doctor_profile: Optional[DoctorProfileAdminResponse] = None
+    average_rating: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -122,7 +124,8 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     role: str
     unused_consultations: int
-    doctor_profile: Optional[DoctorProfileResponse] = None # <--- ИСПРАВЛЕНИЕ ТУТ
+    doctor_profile: Optional[DoctorProfileResponse] = None
+    average_rating: Optional[float] = None
 
     class Config:
         from_attributes = True

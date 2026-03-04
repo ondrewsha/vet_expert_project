@@ -250,6 +250,17 @@ export default function Profile() {
             <h2 className="text-2xl font-bold text-gray-900">Мои данные</h2>
             <p className="text-gray-500">Управляйте контактной информацией</p>
           </div>
+          {/* ПОКАЗЫВАЕМ РЕЙТИНГ ВРАЧУ */}
+          <div className="ml-auto">
+            {user?.average_rating && isDoctor ? (
+                <div className="flex items-center gap-1.5 text-sm font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-lg border border-amber-100">
+                    <Star className="w-4 h-4 fill-current" />
+                    Оценка пациентов: {Number(user.average_rating).toFixed(1)}
+                </div>
+            ) : (
+                <div className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">Оценок пока нет</div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-6">

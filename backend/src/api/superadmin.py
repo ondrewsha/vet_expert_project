@@ -39,8 +39,27 @@ async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSes
 @router.get("/doctors", response_model=List[DoctorAdminResponse])
 async def get_all_doctors_admin(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if current_user.role != "superadmin": raise HTTPException(403)
-    res = await db.execute(select(User).options(selectinload(User.doctor_profile)).where(User.role.in_(["doctor", "superadmin"])).order_by(User.id))
-    return res.scalars().all()
+    
+    # 1. Получаем врачей
+    res = await db.execute(
+        select(User)
+        .options(selectinload(User.doctor_profile))
+        .where(User.role.in_(["doctor", "superadmin"]))
+        .order_by(User.id)
+    )
+    doctors = res.scalars().all()
+    
+    # 2. Высчитываем средний рейтинг для каждого
+    for doc in doctors:
+        rating_res = await db.execute(
+            select(func.avg(Appointment.rating))
+            .where(Appointment.doctor_id == doc.id)
+            .where(Appointment.rating.isnot(None))
+        )
+        # SQLAlchemy вернет None, если оценок нет. Pydantic сам это "проглотит" благодаря Optional
+        doc.average_rating = rating_res.scalar() 
+        
+    return doctors
 
 # --- СОЗДАНИЕ ВРАЧА (FORM DATA) ---
 @router.post("/doctors")

@@ -7,7 +7,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, update, delete
+from sqlalchemy import select, and_, update, delete, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
@@ -69,6 +69,12 @@ async def get_doctors(target_date: date, db: AsyncSession = Depends(get_db)):
             
         # Проверяем рабочие дни ("0,1,2,3,4,5,6")
         if prof.work_days and day_index in prof.work_days.split(','):
+            rating_res = await db.execute(
+                select(func.avg(Appointment.rating))
+                .where(Appointment.doctor_id == doc.id)
+                .where(Appointment.rating.isnot(None))
+            )
+            doc.average_rating = rating_res.scalar()
             working_doctors.append(doc)
             
     return working_doctors

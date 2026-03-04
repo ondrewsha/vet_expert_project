@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
-import { Users, DollarSign, Activity, UserPlus, Power, Loader2, CheckCircle, RefreshCcw, Image as ImageIcon, Edit, X } from 'lucide-react';
+import { Users, DollarSign, Activity, UserPlus, Power, Loader2, CheckCircle, RefreshCcw, Image as ImageIcon, Edit, X, Star } from 'lucide-react';
 import { formatPhone } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -139,8 +139,18 @@ export default function AdminDashboard() {
                             )}
                             <div>
                                 <div className="font-bold text-gray-900">{doc.full_name}</div>
-                                <div className="text-xs text-gray-400 mt-1">
-                                    {doc.doctor_profile?.work_days ? doc.doctor_profile.work_days.split(',').map(d => worksDaysMap[d]).join(', ') : "График не настроен"}
+                                
+                                <div className="flex items-center gap-2 mt-1">
+                                    {/* БЛОК РЕЙТИНГА */}
+                                    <div className="flex items-center gap-1 text-xs font-bold bg-amber-50 text-amber-600 border border-amber-100 px-2 py-0.5 rounded-md">
+                                        <Star className="w-3 h-3 fill-current" />
+                                        {doc.average_rating ? Number(doc.average_rating).toFixed(1) : "Нет оценок"}
+                                    </div>
+                                    
+                                    {/* БЛОК ГРАФИКА */}
+                                    <div className="text-xs text-gray-400">
+                                        {doc.doctor_profile?.work_days ? doc.doctor_profile.work_days.split(',').map(d => worksDaysMap[d]).join(', ') : "График не настроен"}
+                                    </div>
                                 </div>
                             </div>
                         </div>

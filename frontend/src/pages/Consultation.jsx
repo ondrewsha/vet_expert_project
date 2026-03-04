@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight, UserPlus, Stethoscope, Paperclip, X } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight, UserPlus, Stethoscope, Paperclip, X, Star } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'sonner';
@@ -167,7 +167,7 @@ export default function Consultation() {
                     Пожалуйста, выберите другую дату в календаре ниже.
                 </div>
             ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Карточка "Любой врач" */}
                   <div 
                     onClick={() => handleDoctorSelect(null)}
@@ -195,28 +195,37 @@ export default function Consultation() {
                           : 'border-gray-100 hover:border-emerald-200 bg-white'
                       }`}
                     >
-                      {doc.doctor_profile?.photo_url ? (
-                        <img src={doc.doctor_profile.photo_url ? `/api/users/${doc.id}/photo` : null} alt={doc.full_name} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-200" />
-                      ) : (
-                        <div className="w-14 h-14 rounded-full bg-gray-200 flex shrink-0 items-center justify-center text-gray-400 font-bold text-xl">
-                          {doc.full_name ? doc.full_name[0].toUpperCase() : 'В'}
-                        </div>
-                      )}
+                        {doc.doctor_profile?.photo_url ? (
+                          <img src={doc.doctor_profile.photo_url ? `/api/users/${doc.id}/photo` : null} alt={doc.full_name} className="w-14 h-14 rounded-full object-cover shadow-sm border border-gray-200" />
+                        ) : (
+                          <div className="w-14 h-14 rounded-full bg-gray-200 flex shrink-0 items-center justify-center text-gray-400 font-bold text-xl">
+                            {doc.full_name ? doc.full_name[0].toUpperCase() : 'В'}
+                          </div>
+                        )}
                       
-                      <div>
-                        <h3 className="font-bold text-gray-900 leading-tight">{doc.full_name || 'Специалист'}</h3>
-                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                          {doc.doctor_profile?.description || 'Ветеринарный врач'}
-                        </p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-            )}
-             </div>
+                        <div>
+                          <div className="font-bold text-gray-900 leading-tight flex items-center gap-2">
+                              {doc.full_name || 'Специалист'}
+                              {doc.average_rating && (
+                                  <div className="flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100 w-fit">
+                                      <Star className="w-3 h-3 fill-current" />
+                                      {Number(doc.average_rating).toFixed(1)}
+                                  </div>
+                              )}
+                          </div>
 
-          {/* Блок выбора даты и времени */}
-             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                            {doc.doctor_profile?.description || 'Ветеринарный врач'}
+                          </p>
+                        </div>
+                    </div>
+                        ))}
+                </div>
+                  )}
+            </div>
+
+            {/* Блок выбора даты и времени */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex flex-col sm:flex-row gap-6">
               
               {/* Дата */}
