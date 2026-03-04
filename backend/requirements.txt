@@ -31,3 +31,6 @@ itsdangerous==2.1.2
 # селери редис
 celery==5.3.6
 redis==5.0.3
+
+# для шаблонов пдф
+reportlab==4.0.9

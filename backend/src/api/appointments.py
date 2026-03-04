@@ -18,6 +18,7 @@ from src.schemas.schemas import AppointmentResponse, DoctorResponse
 from src.core.security import get_current_user
 from src.services.yookassa_service import create_payment_url
 from src.services.yandex_calendar_service import get_busy_slots_yandex, delete_yandex_event, create_yandex_event
+from src.services.pdf_service import generate_protocol_pdf
 from src.config import settings
 
 router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
@@ -38,6 +39,10 @@ class DoctorDayScheduleResponse(BaseModel):
     time: str
     state: str 
     appt_id: Optional[int] = None
+
+class ProtocolRequest(BaseModel):
+    diagnosis: str
+    recommendations: str
 
 
 # --- 1. ЭНДПОИНТЫ ДЛЯ ВРАЧЕЙ И РАСПИСАНИЯ ---
@@ -223,6 +228,8 @@ async def upload_protocol(
 async def book_appointment(
     start_time: str = Form(...),
     pet_info: str = Form(""),
+    pet_name: str = Form(""),
+    pet_details: str = Form(""),
     doctor_id: int = Form(...),
     files: List[UploadFile] = File(None),
     current_user: User = Depends(get_current_user), 
@@ -281,6 +288,8 @@ async def book_appointment(
             end_time=start_dt + timedelta(minutes=30),
             status="scheduled",
             pet_info=pet_info,
+            pet_name=pet_name,
+            pet_details=pet_details,
             meet_link=meet_link
         )
         db.add(new_appt)
@@ -300,7 +309,7 @@ async def book_appointment(
             files_desc = f"\nФайлов прикреплено: {len(uploaded_file_ids)}" if uploaded_file_ids else ""
             yandex_url = create_yandex_event(
                 start_time=start_dt,
-                summary=f"🩺 Пациент: {pet_info}",
+                summary=f"🩺 Пациент: {pet_name}, {pet_details}",
                 description=f"Оплата балансом.\nКлиент: {current_user.full_name}\nТелефон: {current_user.phone}{files_desc}",
                 email=doc_prof.yandex_email,
                 password=doc_prof.yandex_password
@@ -316,11 +325,11 @@ async def book_appointment(
         time_str = start_dt.strftime('%d.%m.%Y %H:%M')
         
         # Суперадмину
-        await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, f"💰 <b>Запись с баланса!</b>\n📅 {time_str}\nВрач: {doctor.full_name}\n🐶 {pet_info}")
+        await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, f"💰 <b>Запись с баланса!</b>\n📅 {time_str}\nВрач: {doctor.full_name}\n🐶 {pet_name}, {pet_details}")
 
         # Врачу
         if doctor.telegram_id:
-            await send_telegram_message(doctor.telegram_id, f"🩺 <b>Новая запись (баланс)!</b>\n📅 {time_str}\n🐶 {pet_info}\n🔗 {meet_link}\n{files_msg}")
+            await send_telegram_message(doctor.telegram_id, f"🩺 <b>Новая запись (баланс)!</b>\n📅 {time_str}\n🐶 {pet_name}, {pet_details}\n🔗 {meet_link}\n{files_msg}")
         
         # 3. Клиенту
         if current_user.telegram_id:
@@ -337,7 +346,9 @@ async def book_appointment(
         "user_id": str(current_user.id),
         "doctor_id": str(doctor_id),
         "start_time": slot_time.isoformat(),
-        "pet_info": pet_info[:200], 
+        "pet_info": pet_info[:200],
+        "pet_name": pet_name[:50],
+        "pet_details": pet_details[:50],
         "files_data": files_meta_str[:450] # Лимит юкассы 500
     }
     
@@ -597,3 +608,45 @@ async def get_my_appointments_history(
     
     result = await db.execute(query)
     return result.scalars().all()
+
+@router.post("/{appt_id}/generate-protocol")
+async def generate_protocol(
+    appt_id: int,
+    req: ProtocolRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    appt = await db.get(Appointment, appt_id)
+    if not appt: raise HTTPException(404)
+    
+    if current_user.role != "superadmin" and appt.doctor_id != current_user.id:
+        raise HTTPException(403)
+        
+    # Ищем данные
+    user = await db.get(User, appt.user_id)
+    doctor = await db.get(User, appt.doctor_id)
+    
+    # Генерируем PDF
+    pdf_buffer = generate_protocol_pdf(
+        doctor_name=doctor.full_name or "Doctor",
+        client_name=user.full_name or "Client",
+        date_str=appt.start_time.strftime("%d.%m.%Y"),
+        pet_name=appt.pet_name or "Unknown",
+        pet_details=appt.pet_details or "",
+        complaints=appt.pet_info or "",
+        diagnosis=req.diagnosis,
+        recommendations=req.recommendations
+    )
+    
+    # Сохраняем в Mongo
+    file_id = await fs.upload_from_stream(
+        filename=f"Protocol_{appt.id}.pdf",
+        source=pdf_buffer,
+        metadata={"content_type": "application/pdf"}
+    )
+    
+    appt.protocol_file_id = str(file_id)
+    appt.status = "completed"
+    await db.commit()
+    
+    return {"status": "ok", "message": "Протокол создан"}

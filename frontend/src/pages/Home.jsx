@@ -1,12 +1,34 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Book, Loader2, Eye, Heart } from 'lucide-react';
+import { Book, Loader2, Eye, Heart, MessageCircle } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { useAuthStore } from '../store/authStore';
+import { toast } from 'sonner';
 
 export default function Home() {
   const [guides, setGuides] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuthStore();
+
+  const handleLike = async (e, guideId) => {
+    e.stopPropagation(); // Чтобы не открылась страница гайда
+    if (!isAuthenticated) return toast.error("Войдите, чтобы оценить");
+    
+    try {
+      const res = await apiClient.post(`/guides/${guideId}/like`);
+      // Обновляем список локально
+      setGuides(prev => prev.map(g => {
+        if (g.id === guideId) {
+            return { ...g, is_liked: res.data.liked, likes_count: res.data.count };
+        }
+        return g;
+      }));
+    } catch(e) { 
+      toast.error("Ошибка");
+      console.error("Ошибка лайка", e);
+    }
+  };
 
   // Загружаем гайды при открытии страницы
   useEffect(() => {
@@ -78,10 +100,21 @@ export default function Home() {
                     </button>
                     
                     {/* Кнопка лайка */}
-                    <button className="px-3 py-2 bg-pink-50 text-pink-500 rounded-xl flex items-center gap-1 font-bold">
+                    <button 
+                      onClick={(e) => handleLike(e, guide.id)}
+                      className={`px-3 py-2 rounded-xl flex items-center gap-1 font-bold transition ${
+                          guide.is_liked ? 'bg-pink-100 text-pink-500' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
                       <Heart className={`w-4 h-4 ${guide.is_liked ? 'fill-current' : ''}`} />
                       {guide.likes_count}
                     </button>
+                    
+                    {/* Комменты (просто иконка) */}
+                    <div className="flex items-center gap-1 text-xs text-gray-400 font-medium ml-2">
+                        <MessageCircle className="w-4 h-4" />
+                        {guide.comments_count}
+                    </div>
                 </div>
               </div>
             </div>

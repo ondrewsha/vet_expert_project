@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 import { formatPhone } from '../lib/utils';
 import { toast } from 'sonner';
+import Modal from '../components/Modal';
 import { UserCircle, Download, Book, Loader2, Save, Calendar, Video, RefreshCw, ChevronDown, ChevronUp, Star, Phone, XCircle, Stethoscope, Paperclip, FileText, Upload } from 'lucide-react';
 
 export default function Profile() {
@@ -26,6 +27,14 @@ export default function Profile() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const initialized = useRef(false);
   const HISTORY_LIMIT = 3;
+
+  const [isProtocolModalOpen, setIsProtocolModalOpen] = useState(false);
+  const [selectedApptForProtocol, setSelectedApptForProtocol] = useState(null);
+  const [diagnosis, setDiagnosis] = useState('');
+  const [recommendations, setRecommendations] = useState('');
+
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [apptToCancel, setApptToCancel] = useState(null);
 
   const isDoctor = user?.role === 'doctor' || user?.role === 'superadmin';
 
@@ -64,8 +73,29 @@ export default function Profile() {
     }
   },[]);
 
+  const openProtocolModal = (appt) => {
+    setSelectedApptForProtocol(appt);
+    setDiagnosis('');
+    setRecommendations('');
+    setIsProtocolModalOpen(true);
+  };
+
+  const submitProtocol = async () => {
+    try {
+        await apiClient.post(`/appointments/${selectedApptForProtocol.id}/generate-protocol`, {
+            diagnosis, recommendations
+        });
+        toast.success("Протокол создан и отправлен!");
+        setIsProtocolModalOpen(false);
+        fetchAppointments();
+    } catch (e) {
+        toast.error("Ошибка создания протокола");
+        console.error("Ошибка создания протокола", e);
+    }
+  };
+
   const handleLoadMore = () => {
-      loadHistoryData(history.length);
+    loadHistoryData(history.length);
   };
 
   // Сохранение имени и телефона
@@ -81,17 +111,27 @@ export default function Profile() {
   };
 
   // Отмена записи
-  const handleCancel = async (apptId) => {
-    if (!window.confirm("Вы уверены, что хотите отменить запись? Средства будут возвращены на ваш внутренний баланс в виде 1 консультации.")) return;
+  // 1. Открытие модалки
+  const handleCancelClick = (apptId) => {
+    setApptToCancel(apptId);
+    setIsCancelModalOpen(true);
+  };
+
+  // 2. Реальная отмена (вызывается из модалки)
+  const confirmCancel = async () => {
+    if (!apptToCancel) return;
     
     try {
-      await apiClient.post(`/appointments/${apptId}/cancel`);
-      await checkAuth(); // Обновляем стейт юзера (чтобы увидеть +1 на балансе)
-      fetchAppointments(); // Обновляем список записей
+      await apiClient.post(`/appointments/${apptToCancel}/cancel`);
+      await checkAuth(); // Обновляем баланс
+      fetchAppointments(); // Обновляем список
       toast.success("Запись отменена. +1 консультация на балансе.");
     } catch (error) {
       toast.error("Ошибка при отмене записи.");
       console.error("Ошибка при отмене записи", error);
+    } finally {
+      setIsCancelModalOpen(false);
+      setApptToCancel(null);
     }
   };
 
@@ -163,23 +203,6 @@ export default function Profile() {
       toast.error("Неверный код. Попробуйте еще раз.");
       console.error("Ошибка при подтверждении кода", e);
     }
-  };
-
-  // Загрузка протокола (только для врача)
-  const handleUploadProtocol = async (apptId, file) => {
-      if (!file) return;
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const toastId = toast.loading("Загрузка заключения...");
-      try {
-          await apiClient.post(`/appointments/${apptId}/protocol`, formData);
-          toast.success("Заключение отправлено!", { id: toastId });
-          fetchAppointments();
-      } catch (e) {
-          toast.error("Ошибка загрузки", { id: toastId });
-          console.error("Ошибка при загрузке заключения", e);
-      }
   };
 
   return (
@@ -362,10 +385,14 @@ export default function Profile() {
                       </button>
                     )}
                     
+                    {/* КНОПКА ОТМЕНЫ */}
                     {!isDoctor && (
-                        <button onClick={() => handleCancel(appt.id)} className="flex items-center justify-center gap-2 bg-white text-red-500 px-4 py-2 rounded-xl font-medium border border-red-100 hover:bg-red-50 transition text-sm">
+                      <button 
+                        onClick={() => handleCancelClick(appt.id)} // <--- ИЗМЕНИЛИ ЗДЕСЬ
+                        className="flex items-center justify-center gap-2 bg-white text-red-500 px-4 py-2 rounded-xl font-medium border border-red-100 hover:bg-red-50 transition text-sm"
+                      >
                         <XCircle className="w-4 h-4" /> Отменить
-                        </button>
+                      </button>
                     )}
               </div>
             </div>
@@ -400,11 +427,16 @@ export default function Profile() {
                             <FileText className="w-5 h-5"/> Скачать заключение врача
                         </a>
                     ) : isDoctor && appt.status !== 'canceled' ? (
-                        <label className="flex items-center gap-2 cursor-pointer text-blue-600 hover:text-blue-800 transition">
-                            <Upload className="w-4 h-4"/>
-                            <span className="text-sm font-medium">Загрузить заключение (PDF)</span>
-                            <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleUploadProtocol(appt.id, e.target.files[0])} />
-                        </label>
+                        <>
+                        {!appt.protocol_file_id && (
+                            <button 
+                                onClick={() => openProtocolModal(appt)}
+                                className="flex items-center gap-2 text-blue-600 hover:bg-blue-50 px-4 py-2 rounded-lg transition"
+                            >
+                                <FileText className="w-4 h-4" /> Создать заключение
+                            </button>
+                        )}
+                        </>
                     ) : (
                         <div>
                           {appt.status !== 'canceled' && <span className="text-gray-400 text-sm">Заключение еще не готово</span>}
@@ -484,6 +516,57 @@ export default function Profile() {
           ))}
         </div>
       )}
+
+      {/* МОДАЛКА протокола консультации */}
+      <Modal isOpen={isProtocolModalOpen} onClose={() => setIsProtocolModalOpen(false)} title="Протокол консультации">
+        <div className="space-y-4">
+            <div className="bg-gray-50 p-3 rounded-xl text-sm">
+                <p><b>Пациент:</b> {selectedApptForProtocol?.pet_name} ({selectedApptForProtocol?.pet_details})</p>
+                <p className="mt-1"><b>Жалобы:</b> {selectedApptForProtocol?.pet_info}</p>
+            </div>
+            
+            <div>
+                <label className="block text-sm font-bold mb-1">Диагноз</label>
+                <textarea rows="2" value={diagnosis} onChange={e => setDiagnosis(e.target.value)} className="w-full border rounded-xl p-2 outline-none focus:ring-2 focus:ring-primary"></textarea>
+            </div>
+            <div>
+                <label className="block text-sm font-bold mb-1">Рекомендации</label>
+                <textarea rows="6" value={recommendations} onChange={e => setRecommendations(e.target.value)} className="w-full border rounded-xl p-2 outline-none focus:ring-2 focus:ring-primary"></textarea>
+            </div>
+            
+            <button onClick={submitProtocol} className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-emerald-600">
+                Сохранить и отправить
+            </button>
+        </div>
+      </Modal>
+
+      {/* МОДАЛКА ОТМЕНЫ */}
+      <Modal isOpen={isCancelModalOpen} onClose={() => setIsCancelModalOpen(false)} title="Отмена записи">
+        <div className="space-y-4">
+          <div className="bg-amber-50 text-amber-800 p-4 rounded-xl text-sm border border-amber-100">
+            Вы уверены, что хотите отменить эту запись?
+          </div>
+          <p className="text-gray-600 text-sm">
+            Средства не будут возвращены на банковскую карту, но будут зачислены на ваш <b>внутренний баланс</b> (1 консультация). Вы сможете использовать их для новой записи в любое время.
+          </p>
+          
+          <div className="flex gap-3 pt-2">
+            <button 
+              onClick={() => setIsCancelModalOpen(false)}
+              className="flex-1 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition"
+            >
+              Оставить
+            </button>
+            <button 
+              onClick={confirmCancel}
+              className="flex-1 py-3 text-white bg-red-500 hover:bg-red-600 rounded-xl font-bold transition"
+            >
+              Да, отменить
+            </button>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 }

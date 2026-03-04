@@ -91,6 +91,8 @@ class Appointment(Base):
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String, default="scheduled") # scheduled, completed, canceled
     pet_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pet_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pet_details: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     google_event_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     meet_link: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

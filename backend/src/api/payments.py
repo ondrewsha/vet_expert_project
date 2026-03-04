@@ -38,6 +38,8 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 user_id = int(metadata.get("user_id"))
                 doctor_id = int(metadata.get("doctor_id"))
                 pet_info = metadata.get("pet_info")
+                pet_name = metadata.get("pet_name")
+                pet_details = metadata.get("pet_details")
                 
                 moscow_tz = ZoneInfo("Europe/Moscow")
                 start_time_naive = datetime.fromisoformat(metadata.get("start_time"))
@@ -54,7 +56,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 new_appt = Appointment(
                     user_id=user_id, doctor_id=doctor_id, start_time=start_time,
                     end_time=start_time + timedelta(minutes=30), status="scheduled",
-                    pet_info=pet_info, meet_link=meet_link
+                    pet_info=pet_info, pet_name=pet_name, pet_details=pet_details, meet_link=meet_link
                 )
                 db.add(new_appt)
                 await db.commit() # Получаем ID записи
@@ -82,7 +84,7 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
                     file_desc = f"\nФайлов прикреплено: {len(file_names_list)}" if file_names_list else ""
                     yandex_event_url = create_yandex_event(
                         start_time=start_time,
-                        summary=f"🩺 Пациент: {pet_info}",
+                        summary=f"🩺 Пациент: {pet_name}, {pet_details}",
                         description=f"Клиент: {client_name}\nТелефон: {user.phone if user else ''}{file_desc}",
                         email=doc_profile.yandex_email,
                         password=doc_profile.yandex_password
@@ -105,12 +107,12 @@ async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db))
 
                 # 1. Суперадмину
                 await send_telegram_message(settings.TG_SUPER_ADMIN_CHAT_ID, 
-                    f"💰 <b>Оплачена запись!</b>\n📅 {time_str}\nВрач: {doc_name}\n🐶 {pet_info}\n👤 {client_name}{files_msg_part}"
+                    f"💰 <b>Оплачена запись!</b>\n📅 {time_str}\nВрач: {doc_name}\n🐶 {pet_name}, {pet_details}\n👤 {client_name}{files_msg_part}"
                 )
                 # 2. Врачу
                 if doctor and doctor.telegram_id:
                     await send_telegram_message(doctor.telegram_id, 
-                        f"🩺 <b>У вас новая запись!</b>\n📅 {time_str}\n🐶 {pet_info}\n🔗 <a href='{meet_link}'>Ссылка на звонок</a>{files_msg_part}"
+                        f"🩺 <b>У вас новая запись!</b>\n📅 {time_str}\n🐶 {pet_name}, {pet_details}\n🔗 <a href='{meet_link}'>Ссылка на звонок</a>{files_msg_part}"
                     )
                 # 3. Клиенту
                 if user and user.telegram_id:

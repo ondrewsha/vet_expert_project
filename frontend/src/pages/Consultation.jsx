@@ -24,6 +24,8 @@ export default function Consultation() {
   
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [petInfo, setPetInfo] = useState('');
+  const [petName, setPetName] = useState('');
+  const [petDetails, setPetDetails] = useState('');
   
   // Стейт для файлов
   const [files, setFiles] = useState([]); 
@@ -103,6 +105,8 @@ export default function Consultation() {
     const formData = new FormData();
     formData.append('start_time', selectedSlot);
     formData.append('pet_info', petInfo);
+    formData.append('pet_name', petName);
+    formData.append('pet_details', petDetails);
     if (selectedDoctorId) formData.append('doctor_id', selectedDoctorId);
     
     // Добавляем файлы
@@ -286,17 +290,19 @@ export default function Consultation() {
                   Запись на: <b>{new Date(selectedDate).toLocaleDateString('ru-RU')} в {formatTime(selectedSlot)}</b>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Что беспокоит питомца? (Порода, возраст, симптомы)
-                  </label>
-                  <textarea
-                    rows="6"
-                    value={petInfo}
-                    onChange={(e) => setPetInfo(e.target.value)}
-                    placeholder="Например: Собака корги, 3 года. Второй день чешет ухо и трясет головой..."
-                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition resize-none"
-                  ></textarea>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Кличка питомца</label>
+                        <input type="text" value={petName} onChange={e => setPetName(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-primary" placeholder="Мурзик" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Вид, порода, пол, возраст</label>
+                        <input type="text" value={petDetails} onChange={e => setPetDetails(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-primary" placeholder="Кот, мейн-кун, мальчик, 5 лет" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Жалобы</label>
+                        <textarea rows="4" value={petInfo} onChange={e => setPetInfo(e.target.value)} className="w-full px-4 py-2 border rounded-xl outline-none focus:ring-primary resize-none" placeholder="Опишите проблему..."></textarea>
+                    </div>
                 </div>
 
                 {/* ЗАГРУЗКА ФАЙЛОВ */}
