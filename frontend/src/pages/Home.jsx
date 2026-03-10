@@ -223,8 +223,12 @@ export default function Home() {
                   <p className="text-gray-400 text-sm leading-relaxed mb-6 line-clamp-4">
                     {doc.doctor_profile?.description || "Опытный ветеринарный врач. Поможет с постановкой диагноза и планом лечения."}
                   </p>
-                  <Link to="/consultation" className="mt-auto bg-gray-700 text-white w-full py-3 rounded-xl font-bold hover:bg-gray-600 transition text-center flex items-center justify-center gap-2">
-                     Записаться <ArrowRight className="w-4 h-4" />
+                  <Link 
+                    to="/consultation" 
+                    state={{ preselectedDoctorId: doc.id }} 
+                    className="mt-auto bg-gray-700 text-white w-full py-3 rounded-xl font-bold hover:bg-gray-600 transition text-center flex items-center justify-center gap-2"
+                  >
+                    Записаться <ArrowRight className="w-4 h-4" />
                   </Link>
                 </div>
               ))}

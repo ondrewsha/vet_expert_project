@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Calendar as CalendarIcon, Clock, Info, Loader2, ArrowRight, UserPlus, Stethoscope, Paperclip, X, Star } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
@@ -8,6 +8,10 @@ import { toast } from 'sonner';
 export default function Consultation() {
   const { isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const restored = location.state?.restoredData;
+  const preselectedDocId = location.state?.preselectedDoctorId;
 
   const today = new Date();
   const offset = today.getTimezoneOffset() * 60000;
@@ -16,19 +20,19 @@ export default function Consultation() {
   // Стейты
   const [doctors, setDoctors] = useState([]);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
-  const [selectedDoctorId, setSelectedDoctorId] = useState(null); // null = "Не важно к кому"
+  const [selectedDoctorId, setSelectedDoctorId] = useState(restored?.selectedDoctorId || preselectedDocId || null);
   
-  const [selectedDate, setSelectedDate] = useState(defaultDate);
+  const [selectedDate, setSelectedDate] = useState(restored?.selectedDate || defaultDate);
   const [slots, setSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   
-  const [selectedSlot, setSelectedSlot] = useState(null);
-  const [petInfo, setPetInfo] = useState('');
-  const [petName, setPetName] = useState('');
-  const [petDetails, setPetDetails] = useState('');
+  const [selectedSlot, setSelectedSlot] = useState(restored?.selectedSlot || null);
+  const [petInfo, setPetInfo] = useState(restored?.petInfo || '');
+  const [petName, setPetName] = useState(restored?.petName || '');
+  const [petDetails, setPetDetails] = useState(restored?.petDetails || '');
   
   // Стейт для файлов
-  const [files, setFiles] = useState([]); 
+  const[files, setFiles] = useState(restored?.files || []); 
   
   const [isBooking, setIsBooking] = useState(false);
 
@@ -96,7 +100,24 @@ export default function Consultation() {
   };
 
   const handleBook = async () => {
-    if (!isAuthenticated) return navigate('/login');
+    if (!isAuthenticated) {
+      toast.info("Пожалуйста, войдите или зарегистрируйтесь для подтверждения записи.");
+      navigate('/login', {
+        state: {
+          returnTo: '/consultation', // Куда вернуть
+          consultationData: {        // Что восстановить
+            selectedDoctorId,
+            selectedDate,
+            selectedSlot,
+            petInfo,
+            petName,
+            petDetails,
+            files
+          }
+        }
+      });
+      return;
+    }
     if (!selectedSlot) return;
 
     setIsBooking(true);

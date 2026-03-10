@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Phone, KeyRound, Bot, ArrowRight, Loader2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuthStore } from '../store/authStore';
@@ -18,6 +18,7 @@ export default function Login() {
 
   const loginUser = useAuthStore((state) => state.login);
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Шаг 1: Отправка телефона
   const handleSendCode = async (e) => {
@@ -61,7 +62,16 @@ export default function Login() {
       if (isNewUser) payload.full_name = fullName;
       const res = await apiClient.post('/auth/verify-code', payload);
       await loginUser(res.data.access_token);
-      navigate('/profile'); // После входа кидаем в ЛК
+      const returnTo = location.state?.returnTo || '/profile';
+      const restoredData = location.state?.consultationData;
+
+      if (restoredData) {
+        // Возвращаем на страницу записи вместе с заполненной анкетой
+        navigate(returnTo, { state: { restoredData }, replace: true });
+      } else {
+        // Обычный логин - кидаем в кабинет
+        navigate(returnTo, { replace: true });
+      }
     } catch (err) {
       setError('Неверный код. Попробуйте еще раз.');
       console.error("Ошибка при проверке кода", err);
