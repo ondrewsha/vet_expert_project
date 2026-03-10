@@ -4,6 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from pydantic import BaseModel
+from datetime import datetime
 
 from src.database import get_db, fs
 from src.models import User, DoctorProfile, Appointment, Purchase
@@ -19,6 +20,11 @@ class StatsResponse(BaseModel):
     total_guides_sold: int
     total_income: float
 
+class DoctorStatsResponse(BaseModel):
+    doctor_name: str
+    total_appointments: int
+    total_income: float
+
 @router.get("/stats", response_model=StatsResponse)
 async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if current_user.role != "superadmin": raise HTTPException(403)
@@ -29,7 +35,7 @@ async def get_stats(current_user: User = Depends(get_current_user), db: AsyncSes
     purchases = await db.scalar(select(func.count(Purchase.id)).where(Purchase.status == "succeeded"))
     
     guides_money = await db.scalar(select(func.sum(Purchase.amount)).where(Purchase.status == "succeeded")) or 0
-    total_money = guides_money + (appts * 2000)
+    total_money = guides_money + (appts * 1490)
 
     return StatsResponse(
         total_users=users, total_doctors=doctors, 
@@ -162,3 +168,37 @@ async def toggle_doctor_active(id: int, current_user: User = Depends(get_current
     prof.is_active = not prof.is_active
     await db.commit()
     return {"status": "ok", "is_active": prof.is_active}
+
+@router.get("/doctors/{doctor_id}/stats", response_model=DoctorStatsResponse)
+async def get_doctor_monthly_stats(
+    doctor_id: int, 
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    if current_user.role != "superadmin": raise HTTPException(403)
+    
+    # Определяем начало текущего месяца
+    now = datetime.now()
+    start_of_month = datetime(now.year, now.month, 1)
+    
+    # 1. Получаем имя врача
+    doc = await db.get(User, doctor_id)
+    if not doc: raise HTTPException(404)
+    
+    # 2. Считаем успешные приемы за месяц
+    res = await db.execute(
+        select(func.count(Appointment.id))
+        .where(Appointment.doctor_id == doctor_id)
+        .where(Appointment.status == "completed")
+        .where(Appointment.start_time >= start_of_month)
+    )
+    count = res.scalar() or 0
+    
+    # 3. Считаем заработок (допустим, 1490 руб за прием)
+    income = count * 1490.0 * 0.9
+    
+    return DoctorStatsResponse(
+        doctor_name=doc.full_name,
+        total_appointments=count,
+        total_income=income
+    )

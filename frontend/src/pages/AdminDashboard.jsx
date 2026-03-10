@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { Users, DollarSign, Activity, UserPlus, Power, Loader2, CheckCircle, RefreshCcw, Image as ImageIcon, Edit, X, Star } from 'lucide-react';
 import { formatPhone } from '../lib/utils';
 import { toast } from 'sonner';
+import Modal from '../components/Modal';
 
 export default function AdminDashboard() {
   const { user } = useAuthStore();
@@ -21,6 +22,8 @@ export default function AdminDashboard() {
   const [link, setLink] = useState('');
   const [file, setFile] = useState(null); // Фото
   const [existingPhoto, setExistingPhoto] = useState(null);
+
+  const [selectedDocStats, setSelectedDocStats] = useState(null);
   
   const [processing, setProcessing] = useState(false);
 
@@ -35,6 +38,16 @@ export default function AdminDashboard() {
       setDoctors(docRes.data);
     }).catch(() => toast.error("Ошибка загрузки"))
       .finally(() => setLoading(false));
+  };
+
+  const fetchDocStats = async (id) => {
+    try {
+        const res = await apiClient.get(`/superadmin/doctors/${id}/stats`);
+        setSelectedDocStats(res.data);
+    } catch(e) {
+        toast.error("Не удалось получить статистику врача");
+        console.error(e);
+    }
   };
 
   useEffect(() => {
@@ -167,6 +180,13 @@ export default function AdminDashboard() {
                                 <Power className="w-4 h-4" />
                                 <span>{doc.doctor_profile?.is_active ? "Откл" : "Вкл"}</span>
                             </button>
+                            <button 
+                                onClick={() => fetchDocStats(doc.id)} 
+                                className="p-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100"
+                                title="Статистика за месяц"
+                            >
+                                <DollarSign className="w-4 h-4" />
+                            </button>
                         </div>
                     </div>
                 ))}
@@ -234,6 +254,26 @@ export default function AdminDashboard() {
         </div>
 
       </div>
+
+      <Modal 
+        isOpen={!!selectedDocStats} 
+        onClose={() => setSelectedDocStats(null)} 
+        title={`Статистика: ${selectedDocStats?.doctor_name}`}
+      >
+        {selectedDocStats && (
+            <div className="space-y-4">
+                <div className="bg-gray-50 p-4 rounded-xl flex justify-between items-center">
+                    <span className="text-gray-600">Приемов в этом месяце:</span>
+                    <span className="font-bold text-lg">{selectedDocStats.total_appointments}</span>
+                </div>
+                <div className="bg-emerald-50 p-4 rounded-xl flex justify-between items-center border border-emerald-100">
+                    <span className="text-emerald-800 font-medium">Заработано (за месяц):</span>
+                    <span className="font-black text-xl text-emerald-900">{selectedDocStats.total_income} ₽</span>
+                </div>
+                <p className="text-xs text-gray-400 text-center">Расчет произведен по ставке 1490 ₽ / прием * 0,9</p>
+            </div>
+        )}
+      </Modal>
     </div>
   );
 }

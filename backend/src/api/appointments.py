@@ -405,7 +405,7 @@ async def book_appointment(
     }
     
     payment_url = await create_payment_url(
-        amount=2000.00,
+        amount=1490.00,
         description=f"Консультация: {doctor.full_name}",
         metadata=metadata,
         return_url="https://твой-сайт.ru/profile"
