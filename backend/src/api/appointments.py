@@ -408,7 +408,7 @@ async def book_appointment(
         amount=1490.00,
         description=f"Консультация: {doctor.full_name}",
         metadata=metadata,
-        return_url="https://твой-сайт.ru/profile"
+        return_url="https://zoo-medica.ru/profile"
     )
     
     return {"message": "Забронировано", "payment_url": payment_url, "slot": slot_time}

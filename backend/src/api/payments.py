@@ -190,7 +190,7 @@ async def buy_guide(
         amount=float(guide.price),
         description=f"Гайд: {guide.title}",
         metadata=metadata,
-        return_url="https://твой-сайт.ru/profile"
+        return_url="https://zoo-medica.ru/profile"
     )
     
     return {"payment_url": payment_url}

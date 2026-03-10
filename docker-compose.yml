@@ -1,117 +1,122 @@
 services:
-  # 1. Реляционная БД (Пользователи, транзакции, расписание)
   db:
     image: postgres:15-alpine
-    container_name: vetexpert_postgres
+    container_name: zoomedica_db
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: Europe/Moscow
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # 2. NoSQL БД (Файлы гайдов, PDF через GridFS)
   mongo:
     image: mongo:6.0
-    container_name: vetexpert_mongo
+    container_name: zoomedica_mongo
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-    ports:
-      - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    logging: *default-logging
 
-  # 3. In-memory БД (Временные коды из ТГ, кэш)
   redis:
     image: redis:7-alpine
-    container_name: vetexpert_redis
+    container_name: zoomedica_redis
     restart: always
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
+    logging: *default-logging
 
-  # 4. Наш FastAPI Бэкенд
   backend:
     build: 
       context: ./backend
-    container_name: vetexpert_backend
+    container_name: zoomedica_backend
     restart: always
     environment:
       - TZ=Europe/Moscow
     env_file:
       - .env
-    ports:
-      - "8000:8000"
-    volumes:
-      # Прокидываем код из папки src внутрь контейнера, 
-      # чтобы при изменении кода сервер сам перезагружался (hot-reload)
-      - ./backend:/app
     depends_on:
       - db
       - mongo
       - redis
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
-  
-  # Воркер (Исполнитель)
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
+    logging: *default-logging
+
   celery_worker:
     build: 
       context: ./backend
-    container_name: vetexpert_worker
+    container_name: zoomedica_worker
     restart: always
     environment:
       - TZ=Europe/Moscow
     env_file:
       - .env
-    volumes:
-      - ./backend:/app
     depends_on:
       - db
       - redis
       - mongo
-    # Запуск воркера
     command: celery -A src.celery_app worker --loglevel=info
+    logging: *default-logging
 
-  # Бит (Планировщик)
   celery_beat:
     build: 
       context: ./backend
-    container_name: vetexpert_beat
+    container_name: zoomedica_beat
     restart: always
     environment:
       - TZ=Europe/Moscow
     env_file:
       - .env
-    volumes:
-      - ./backend:/app
     depends_on:
       - db
       - redis
       - mongo
-    # Запуск планировщика
     command: celery -A src.celery_app beat --loglevel=info
-    
+    logging: *default-logging
+
   frontend:
     build:
       context: ./frontend
-    container_name: vetexpert_frontend
+      args:
+        - VITE_API_URL=https://zoo-medica.ru/api
+    container_name: zoomedica_frontend
     restart: always
-    ports:
-      - "5173:5173"  # Порт React/Vite
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules # Чтобы локальная папка не затирала модули внутри контейнера
     depends_on:
       - backend
-    # Переменные окружения для React (начинаются с VITE_)
-    environment:
-      - VITE_API_URL=http://localhost:8000
+    logging: *default-logging
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: zoomedica_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - backend
+      - frontend
+    logging: *default-logging
+
+  certbot:
+    image: certbot/certbot
+    container_name: zoomedica_certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
 volumes:
   postgres_data:
