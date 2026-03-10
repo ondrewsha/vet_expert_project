@@ -12,8 +12,8 @@ from src.admin import setup_admin
 
 # Инициализация приложения
 app = FastAPI(
-    title="VetExpert API",
-    description="Бэкенд для платформы ВетЭксперт (гайды и консультации)",
+    title="ZooMedica API",
+    description="Бэкенд для платформы ЗооМедика (гайды и консультации)",
     version="1.0.0",
 )
 

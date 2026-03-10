@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from src.services.telegram_service import send_telegram_message
 from src.database import get_db, redis_client, fs
 from src.models import User, Appointment, DoctorProfile, AppointmentFile
-from src.schemas.schemas import AppointmentResponse, DoctorResponse
+from src.schemas.schemas import AppointmentResponse, DoctorResponse, LandingInfoResponse
 from src.core.security import get_current_user
 from src.services.yookassa_service import create_payment_url
 from src.services.yandex_calendar_service import get_busy_slots_yandex, delete_yandex_event, create_yandex_event
@@ -44,6 +44,52 @@ class ProtocolRequest(BaseModel):
     diagnosis: str
     recommendations: str
 
+
+@router.get("/landing-info", response_model=LandingInfoResponse)
+async def get_landing_info(db: AsyncSession = Depends(get_db)):
+    """Агрегированные данные для главной страницы (Лендинга)"""
+    
+    # 1. Средний рейтинг по всем приемам платформы
+    avg_rating = await db.scalar(select(func.avg(Appointment.rating)).where(Appointment.rating.isnot(None)))
+    
+    # 2. Список активных врачей и их личный рейтинг
+    res = await db.execute(
+        select(User)
+        .options(selectinload(User.doctor_profile))
+        .where(User.role.in_(["doctor", "superadmin"]))
+    )
+    all_doctors = res.scalars().all()
+    
+    working_doctors =[]
+    for doc in all_doctors:
+        if doc.doctor_profile and doc.doctor_profile.is_active:
+            doc_rating = await db.scalar(
+                select(func.avg(Appointment.rating))
+                .where(Appointment.doctor_id == doc.id)
+                .where(Appointment.rating.isnot(None))
+            )
+            doc.average_rating = doc_rating
+            working_doctors.append(doc)
+            
+    # 3. Проверка: работает ли кто-то именно СЕГОДНЯ, и не закончился ли рабочий день
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    now = datetime.now(moscow_tz)
+    today = now.date()
+    day_index = str(today.weekday())
+    work_end = datetime.combine(today, time(WORK_END_HOUR, 0)).replace(tzinfo=moscow_tz)
+    
+    has_slots_today = False
+    if now < work_end:
+        for doc in working_doctors:
+            if doc.doctor_profile.work_days and day_index in doc.doctor_profile.work_days.split(','):
+                has_slots_today = True
+                break
+                
+    return {
+        "average_rating": avg_rating or 5.0, # Если отзывов еще нет, показываем 5.0
+        "doctors": working_doctors,
+        "has_slots_today": has_slots_today
+    }
 
 # --- 1. ЭНДПОИНТЫ ДЛЯ ВРАЧЕЙ И РАСПИСАНИЯ ---
 

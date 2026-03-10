@@ -183,3 +183,8 @@ class ManageBlocksRequest(BaseModel):
     date: str
     to_block: List[str]
     to_unblock: List[str]
+
+class LandingInfoResponse(BaseModel):
+    average_rating: float
+    doctors: List[DoctorResponse]
+    has_slots_today: bool

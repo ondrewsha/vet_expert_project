@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Mail, Phone, MapPin } from 'lucide-react';
+import { PawIcon } from './Navbar';
 
 export default function Footer() {
   return (
@@ -10,10 +11,10 @@ export default function Footer() {
           {/* Бренд и описание */}
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">V</span>
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white">
+                <PawIcon />
               </div>
-              <span className="font-bold text-xl text-gray-900 tracking-tight">ВетЭксперт</span>
+              <span className="font-bold text-xl text-gray-900 tracking-tight">ЗооМедика</span>
             </div>
             <p className="text-sm text-gray-500 mb-4">
               Профессиональные ветеринарные онлайн-консультации и авторские руководства по уходу за питомцами.
@@ -64,7 +65,7 @@ export default function Footer() {
         </div>
 
         <div className="border-t border-gray-100 mt-10 pt-6 text-center text-sm text-gray-400">
-          © {new Date().getFullYear()} ВетЭксперт. Все права защищены.
+          © {new Date().getFullYear()} ЗооМедика. Все права защищены.
         </div>
       </div>
     </footer>

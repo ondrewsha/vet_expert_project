@@ -35,7 +35,7 @@ def generate_protocol_pdf(doctor_name, client_name, date_str, pet_name, pet_deta
     story =[]
 
     # Заголовок
-    story.append(Paragraph("ВетЭксперт", styles['RuHeading1']))
+    story.append(Paragraph("ЗооМедика", styles['RuHeading1']))
     story.append(Paragraph("ПРОТОКОЛ ВЕТЕРИНАРНОЙ ОНЛАЙН-КОНСУЛЬТАЦИИ", styles['RuHeading2']))
     story.append(Spacer(1, 0.5*cm))
 
@@ -92,7 +92,7 @@ def generate_guide_pdf(title, author_name, content):
     story.append(Spacer(1, 5*cm))
     story.append(Paragraph(title, styles['RuCenterTitle']))
     story.append(Paragraph(f"Автор: {author_name}", styles['RuSubtitle']))
-    story.append(Paragraph("Эксклюзивно на платформе ВетЭксперт", styles['RuSubtitle']))
+    story.append(Paragraph("Эксклюзивно на платформе ЗооМедика", styles['RuSubtitle']))
     
     # Разрыв страницы
     story.append(PageBreak())

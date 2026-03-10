@@ -119,7 +119,7 @@ async def request_phone_change(req: PhoneChangeRequest, current_user: User = Dep
     
     need_bot = True
     if existing_user and existing_user.telegram_id:
-        await send_telegram_message(existing_user.telegram_id, f"🔄 Ваш код для смены номера в ВетЭксперт: <b>{code}</b>")
+        await send_telegram_message(existing_user.telegram_id, f"🔄 Ваш код для смены номера в ЗооМедика: <b>{code}</b>")
         need_bot = False
     else:
         print(f"⚠️ КОД СМЕНЫ ТЕЛЕФОНА ДЛЯ {req.new_phone}: {code}")

@@ -76,7 +76,7 @@ export default function Login() {
         
         <div className="text-center">
           <h2 className="text-3xl font-extrabold text-gray-900">
-            Вход в ВетЭксперт
+            Вход в ЗооМедика
           </h2>
           <p className="mt-2 text-sm text-gray-500">
             {step === 1 ? 'Введите номер телефона для получения кода' : 'Код отправлен в наш Telegram бот'}

@@ -10,7 +10,7 @@ export default function Privacy() {
 
       <div className="prose prose-emerald max-w-none bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-gray-100">
         <p>
-          Мы в «ВетЭксперт» серьезно относимся к конфиденциальности ваших персональных данных. Эта политика объясняет, как мы собираем, используем и защищаем вашу информацию.
+          Мы в «ЗооМедика» серьезно относимся к конфиденциальности ваших персональных данных. Эта политика объясняет, как мы собираем, используем и защищаем вашу информацию.
         </p>
 
         <h3 className="text-xl font-bold flex items-center gap-2 mt-8"><Database className="w-5 h-5 text-primary"/> 1. Собираемые данные</h3>

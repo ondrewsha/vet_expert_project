@@ -6,6 +6,7 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Login from './pages/Login';
 import Home from './pages/Home';
+import Guides from './pages/Guides';
 import Profile from './pages/Profile';
 import Consultation from './pages/Consultation';
 import Privacy from './pages/Privacy';
@@ -47,6 +48,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/guides" element={<Guides />} />
             <Route path="/consultation" element={<Consultation />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />

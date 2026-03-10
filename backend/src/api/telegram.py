@@ -34,7 +34,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             
             await send_telegram_message(
                 chat_id, 
-                "👋 Привет! Добро пожаловать в ВетЭксперт.\n\n"
+                "👋 Привет! Добро пожаловать в ЗооМедика.\n\n"
                 "Чтобы я мог присылать вам коды для входа, нажмите кнопку ниже:",
                 keyboard=contact_keyboard # Передаем клавиатуру
             )

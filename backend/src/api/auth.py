@@ -36,7 +36,7 @@ async def send_code(request: SendCodeRequest, db: AsyncSession = Depends(get_db)
         # Если юзер есть и у него привязан ТГ — шлем туда
         await send_telegram_message(
             chat_id=user.telegram_id,
-            text=f"🔐 Ваш код входа в ВетЭксперт: <b>{code}</b>"
+            text=f"🔐 Ваш код входа в ЗооМедика: <b>{code}</b>"
         )
         sent_to_tg = True
         print(f"✅ Код отправлен в Telegram пользователю {user.id}")
@@ -94,3 +94,13 @@ async def verify_code(request: VerifyCodeRequest, response: Response, db: AsyncS
     )
     
     return TokenResponse(access_token=access_token)
+
+@router.post("/logout")
+async def logout(response: Response):
+    """Очищает HttpOnly куку при выходе"""
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        samesite="lax"
+    )
+    return {"message": "Успешный выход"}

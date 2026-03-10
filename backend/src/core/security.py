@@ -15,8 +15,8 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
-# ИСПОЛЬЗУЕМ HTTPBearer вместо OAuth2PasswordBearer
-security = HTTPBearer()
+
+security = HTTPBearer(auto_error=False)
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -30,7 +30,6 @@ def create_refresh_token(data: dict) -> str:
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
-# Обновили зависимость
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security), 
     db: AsyncSession = Depends(get_db)
@@ -40,11 +39,13 @@ async def get_current_user(
         detail="Не удалось проверить учетные данные (токен недействителен или просрочен)",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # Так как мы отключили авто-ошибку, нам нужно проверить наличие токена вручную
+    if not credentials:
+        raise credentials_exception
+
     try:
-        # Достаем сам токен из credentials
         token = credentials.credentials
-        
-        # Расшифровываем токен
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
@@ -53,7 +54,6 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # Ищем пользователя в БД
     result = await db.execute(select(User).where(User.id == int(token_data.user_id)))
     user = result.scalars().first()
     
@@ -61,6 +61,7 @@ async def get_current_user(
         raise credentials_exception
         
     return user
+
 
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security), 
