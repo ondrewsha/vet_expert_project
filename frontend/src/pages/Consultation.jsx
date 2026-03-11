@@ -369,7 +369,7 @@ export default function Consultation() {
           <div className="pt-6 border-t border-gray-100 mt-auto">
             <div className="flex justify-between items-end mb-4">
               <span className="text-gray-500 font-medium">К оплате:</span>
-              <span className="text-3xl font-black text-gray-900 tracking-tight">2 000 ₽</span>
+              <span className="text-3xl font-black text-gray-900 tracking-tight">1 490 ₽</span>
             </div>
             
             <button
