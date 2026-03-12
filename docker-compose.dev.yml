@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: zoomedica_db_dev
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - TZ=Europe/Moscow
+    ports:
+      - "5432:5432" # Прокидываем порт, чтобы заходить в базу через DBeaver/Navicat
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+
+  mongo:
+    image: mongo:6.0
+    container_name: zoomedica_mongo_dev
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongo_data_dev:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: zoomedica_redis_dev
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: 
+      context: ./backend
+    container_name: zoomedica_backend_dev
+    environment:
+      - TZ=Europe/Moscow
+    env_file: .env
+    volumes:
+      - ./backend:/app # ВОЗВРАЩАЕМ VOLUMES
+    depends_on:
+      - db
+      - mongo
+      - redis
+    # ВОЗВРАЩАЕМ --reload
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev # Используем отдельный докерфайл для разработки
+    container_name: zoomedica_frontend_dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+    depends_on:
+      - backend
+
+  celery_worker:
+    build: ./backend
+    container_name: zoomedica_worker_dev
+    environment:
+      - TZ=Europe/Moscow
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+    command: watchfiles 'celery -A src.celery_app worker --loglevel=info' src # Авторестарт воркера при смене кода
+
+  celery_beat:
+    build: ./backend
+    container_name: zoomedica_beat_dev
+    environment:
+      - TZ=Europe/Moscow
+    env_file: .env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+    command: celery -A src.celery_app beat --loglevel=info
+
+volumes:
+  postgres_data_dev:
+  mongo_data_dev:
