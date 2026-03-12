@@ -37,6 +37,11 @@ export default function Profile() {
   const [apptToCancel, setApptToCancel] = useState(null);
   const [isCanceling, setIsCanceling] = useState(false);
 
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewText, setReviewText] = useState('');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewDoctorId, setReviewDoctorId] = useState(null);
+
   const isDoctor = user?.role === 'doctor' || user?.role === 'superadmin';
 
   const fetchAppointments = () => {
@@ -63,6 +68,21 @@ export default function Profile() {
       } finally {
           setLoadingHistory(false);
       }
+  };
+
+  const submitReview = async () => {
+    try {
+        await apiClient.post('/reviews', {
+            text: reviewText,
+            rating: reviewRating,
+            doctor_id: reviewDoctorId
+        });
+        toast.success("Спасибо за ваш отзыв!");
+        setIsReviewModalOpen(false);
+        setReviewText('');
+    } catch (e) {
+        toast.error("Не удалось отправить отзыв");
+    }
   };
 
   useEffect(() => {
@@ -479,6 +499,15 @@ export default function Profile() {
                 
                 {appt.status === 'completed' && !isDoctor && (
                   <div>
+                    <button 
+                        onClick={() => {
+                            setReviewDoctorId(appt.doctor.id);
+                            setIsReviewModalOpen(true);
+                        }}
+                        className="mt-2 text-xs text-primary font-bold hover:underline"
+                    >
+                        Написать отзыв
+                    </button>
                     <div className="text-sm font-medium text-gray-500 mb-2 text-center sm:text-right">
                       {appt.rating ? "Ваша оценка" : "Оцените прием"}
                     </div>
@@ -601,6 +630,30 @@ export default function Profile() {
               {isCanceling ? <Loader2 className="w-5 h-5 animate-spin" /> : "Да, отменить"}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* МОДАЛКА ОТЗЫВА */}
+      <Modal isOpen={isReviewModalOpen} onClose={() => setIsReviewModalOpen(false)} title="Ваш отзыв">
+        <div className="space-y-4">
+            <div className="flex justify-center gap-2">
+                {[1,2,3,4,5].map(s => (
+                    <Star 
+                        key={s} 
+                        onClick={() => setReviewRating(s)}
+                        className={`w-8 h-8 cursor-pointer ${reviewRating >= s ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`} 
+                    />
+                ))}
+            </div>
+            <textarea 
+                value={reviewText}
+                onChange={e => setReviewText(e.target.value)}
+                placeholder="Расскажите о ваших впечатлениях..."
+                className="w-full border rounded-xl p-3 h-32 outline-none focus:ring-2 focus:ring-primary"
+            />
+            <button onClick={submitReview} className="w-full bg-primary text-white py-3 rounded-xl font-bold">
+                Опубликовать
+            </button>
         </div>
       </Modal>
 

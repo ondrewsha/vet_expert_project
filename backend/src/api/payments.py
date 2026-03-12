@@ -174,6 +174,18 @@ async def buy_guide(
     )
     if purchase.scalars().first():
         return {"message": "Вы уже купили этот гайд! Он доступен в вашем профиле."}
+    
+    # ЕСЛИ ГАЙД БЕСПЛАТНЫЙ
+    if guide.price == 0:
+        new_purchase = Purchase(
+            user_id=current_user.id,
+            guide_id=guide_id,
+            amount=0,
+            status="succeeded" # Сразу успех
+        )
+        db.add(new_purchase)
+        await db.commit()
+        return {"message": "Гайд добавлен в вашу библиотеку", "free": True}
         
     # 2. Формируем метаданные для вебхука (тип = guide)
     metadata = {

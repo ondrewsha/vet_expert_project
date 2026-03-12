@@ -88,6 +88,13 @@ def generate_guide_pdf(title, author_name, content):
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2.5*cm, leftMargin=2.5*cm, topMargin=3*cm, bottomMargin=3*cm)
     story =[]
 
+    # Очистка HTML от Tiptap для ReportLab Paragraph
+    # ReportLab понимает <b>, <i>, <u>, <br/>. 
+    # Заменяем <p> на переносы, убираем <ul> и превращаем <li> в буллиты.
+    clean_content = content.replace('<p>', '').replace('</p>', '<br/>')
+    clean_content = clean_content.replace('<ul>', '').replace('</ul>', '')
+    clean_content = clean_content.replace('<li>', ' • ').replace('</li>', '<br/>')
+
     # Титульный лист
     story.append(Spacer(1, 5*cm))
     story.append(Paragraph(title, styles['RuCenterTitle']))
@@ -99,16 +106,12 @@ def generate_guide_pdf(title, author_name, content):
     story.append(Spacer(1, 4*cm))
 
     # Основной текст (разбиваем по абзацам)
-    paragraphs = content.split('\n')
-    for p in paragraphs:
-        text = p.strip()
-        if text:
-            # Если строка короткая и без точек - считаем ее подзаголовком
-            if len(text) < 60 and not text.endswith('.') and not text.endswith(','):
-                story.append(Paragraph(text, styles['RuHeading2']))
-            else:
-                story.append(Paragraph(text, styles['RuNormal']))
-                story.append(Spacer(1, 0.3*cm))
+    # Разбиваем по <br/> и рисуем
+    parts = clean_content.split('<br/>')
+    for text in parts:
+        if text.strip():
+            story.append(Paragraph(text, styles['RuNormal']))
+            story.append(Spacer(1, 0.2*cm))
 
     doc.build(story)
     buffer.seek(0)
