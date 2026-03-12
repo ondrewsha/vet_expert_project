@@ -505,7 +505,7 @@ export default function DoctorDashboard() {
                                 <div>
                                     <TiptapEditor 
                                         value={guideContent} 
-                                        onChange={e => setGuideContent(e.target.value)} 
+                                        onChange={(html) => setGuideContent(html)} 
                                         placeholder="Пишите текст здесь. Платформа сверстает PDF с титульным листом!" 
                                     ></TiptapEditor>
                                 </div>
