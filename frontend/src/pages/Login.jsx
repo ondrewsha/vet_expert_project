@@ -138,7 +138,7 @@ export default function Login() {
                   Похоже, вы у нас впервые! Чтобы мы могли отправлять вам коды входа и напоминания, пожалуйста, <b>зарегистрируйтесь через нашего бота</b>.
                 </p>
                 <a
-                  href="https://t.me/VetExpert_TestBot"
+                  href="https://t.me/zoo_medica_bot"
                   target="_blank"
                   rel="noreferrer"
                   className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-medium transition"
