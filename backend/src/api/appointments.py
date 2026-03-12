@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from src.services.telegram_service import send_telegram_message
 from src.database import get_db, redis_client, fs
-from src.models import User, Appointment, DoctorProfile, AppointmentFile
+from src.models import User, Appointment, DoctorProfile, AppointmentFile, Review
 from src.schemas.schemas import AppointmentResponse, DoctorResponse, LandingInfoResponse
 from src.core.security import get_current_user
 from src.services.yookassa_service import create_payment_url
@@ -84,11 +84,30 @@ async def get_landing_info(db: AsyncSession = Depends(get_db)):
             if doc.doctor_profile.work_days and day_index in doc.doctor_profile.work_days.split(','):
                 has_slots_today = True
                 break
+    
+    reviews_res = await db.execute(
+        select(Review, User.full_name)
+        .join(User, Review.user_id == User.id)
+        .where(Review.is_approved == True)
+        .order_by(Review.created_at.desc())
+        .limit(10)
+    )
+    
+    formatted_reviews = []
+    for rev, name in reviews_res.all():
+        formatted_reviews.append({
+            "id": rev.id,
+            "text": rev.text,
+            "rating": rev.rating,
+            "user_name": name or "Клиент",
+            "created_at": rev.created_at
+        })
                 
     return {
         "average_rating": avg_rating or 5.0, # Если отзывов еще нет, показываем 5.0
         "doctors": working_doctors,
-        "has_slots_today": has_slots_today
+        "has_slots_today": has_slots_today,
+        "reviews": formatted_reviews
     }
 
 # --- 1. ЭНДПОИНТЫ ДЛЯ ВРАЧЕЙ И РАСПИСАНИЯ ---

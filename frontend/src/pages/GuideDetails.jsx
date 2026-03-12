@@ -60,7 +60,9 @@ export default function GuideDetails() {
     if (!isAuthenticated) return navigate('/login');
     try {
       const res = await apiClient.post(`/payments/buy-guide/${id}`);
-      if (res.data.payment_url) {
+      if (res.data.free) {
+        toast.success("Гайд добавлен в вашу библиотеку бесплатно!");
+      } else if (res.data.payment_url) {
         window.location.assign(res.data.payment_url);
       } else if (res.data.message) {
         toast.info(res.data.message);
@@ -144,7 +146,7 @@ export default function GuideDetails() {
                 className="flex-1 bg-gray-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-lg shadow-gray-200"
               >
                 <ShoppingCart className="w-5 h-5" />
-                Купить полную версию
+                {guide.price == 0 ? "Получить бесплатно" : `Купить за ${guide.price} ₽`}
               </button>
               
               <button 

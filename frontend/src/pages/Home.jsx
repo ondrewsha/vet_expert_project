@@ -292,6 +292,37 @@ export default function Home() {
         )}
       </div>
 
+      {/* === ОТЗЫВЫ КЛИЕНТОВ === */}
+      {landingData.reviews && landingData.reviews.length > 0 && (
+        <div className="bg-emerald-50/30 py-20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 className="text-3xl font-extrabold text-gray-900 text-center mb-16">Отзывы наших клиентов</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {landingData.reviews.map((rev) => (
+                <div key={rev.id} className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col">
+                  <div className="flex gap-1 mb-4">
+                    {[...Array(5)].map((_, i) => (
+                      <Star key={i} className={`w-4 h-4 ${i < rev.rating ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}`} />
+                    ))}
+                  </div>
+                  <p className="text-gray-600 italic mb-6 grow">"{rev.text}"</p>
+                  <div className="flex items-center gap-3 border-t border-gray-50 pt-4">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                      {rev.user_name[0]}
+                    </div>
+                    <div>
+                      <div className="font-bold text-gray-900 text-sm">{rev.user_name}</div>
+                      <div className="text-xs text-gray-400">{new Date(rev.created_at).toLocaleDateString()}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* === BOTTOM CTA === */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20 mb-10">
         <div className="bg-primary rounded-3xl p-8 sm:p-12 text-center text-white relative overflow-hidden shadow-2xl shadow-emerald-500/20">

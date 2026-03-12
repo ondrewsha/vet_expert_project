@@ -132,3 +132,16 @@ class Comment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user: Mapped["User"] = relationship(back_populates="comments")
     guide: Mapped["Guide"] = relationship(back_populates="comments")
+
+class Review(Base):
+    __tablename__ = "reviews"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    doctor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    is_approved: Mapped[bool] = mapped_column(Boolean, default=False) # Модерация
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    doctor: Mapped[Optional["User"]] = relationship(foreign_keys=[doctor_id])

@@ -3,6 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 import { BookOpen, UploadCloud, Loader2, CheckCircle, Calendar, Clock, Lock, CheckSquare, Settings, Save, Edit3, X, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import TiptapEditor from '../components/TiptapEditor'
 
 export default function DoctorDashboard() {
   const { user, checkAuth } = useAuthStore();
@@ -502,13 +503,11 @@ export default function DoctorDashboard() {
                                 </label>
                             ) : (
                                 <div>
-                                    <textarea 
-                                        rows="6" 
+                                    <TiptapEditor 
                                         value={guideContent} 
                                         onChange={e => setGuideContent(e.target.value)} 
-                                        placeholder="Пишите текст здесь. Короткие строки автоматически станут подзаголовками, а платформа сама сверстает красивый PDF с титульным листом!" 
-                                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-primary outline-none resize-none transition"
-                                    ></textarea>
+                                        placeholder="Пишите текст здесь. Платформа сверстает PDF с титульным листом!" 
+                                    ></TiptapEditor>
                                 </div>
                             )}
                         </div>

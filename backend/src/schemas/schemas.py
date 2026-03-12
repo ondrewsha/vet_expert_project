@@ -36,6 +36,21 @@ class CommentResponse(CommentBase):
     class Config:
         from_attributes = True
 
+class ReviewCreate(BaseModel):
+    text: str
+    rating: int
+    doctor_id: Optional[int] = None
+
+class ReviewResponse(BaseModel):
+    id: int
+    text: str
+    rating: int
+    user_name: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 # --- ГАЙДЫ ---
 class GuideBase(BaseModel):
     title: str
@@ -188,3 +203,4 @@ class LandingInfoResponse(BaseModel):
     average_rating: float
     doctors: List[DoctorResponse]
     has_slots_today: bool
+    reviews: List[ReviewResponse]
