@@ -405,7 +405,7 @@ export default function Profile() {
                        {isDoctor ? "Пациент (из анкеты):" : appt.doctor?.full_name || "Специалист"}
                     </div>
 
-                    <div className="text-sm text-gray-500 bg-gray-50 inline-block px-3 py-1 rounded-lg">Пациент: {appt.pet_info || 'Не указано'}</div>
+                    <div className="text-sm text-gray-500 bg-gray-50 inline-block px-3 py-1 rounded-lg">Пациент: {appt.pet_name || 'Не указано'} {appt.pet_details || ''}</div>
 
                     {/* ФАЙЛЫ АНАЛИЗОВ */}
                     {appt.files && appt.files.length > 0 && (
@@ -472,7 +472,7 @@ export default function Profile() {
                     <Stethoscope className="w-4 h-4 text-emerald-500" />
                     {appt.doctor?.full_name || "Специалист"}
                   </div>
-                  <div className="text-sm text-gray-500">{appt.pet_info || 'Не указано'}</div>
+                  <div className="text-sm text-gray-500">{appt.pet_name || 'Не указано'} {appt.pet_details ? `- ${appt.pet_details}` : ''}</div>
                 </div>
                 {/* ЗАКЛЮЧЕНИЕ */}
                 <div className="items-center">
