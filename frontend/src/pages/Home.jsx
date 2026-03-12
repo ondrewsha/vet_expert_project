@@ -302,9 +302,15 @@ export default function Home() {
               {landingData.reviews.map((rev) => (
                 <div key={rev.id} className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col">
                   <div className="flex gap-1 mb-4">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className={`w-4 h-4 ${i < rev.rating ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}`} />
-                    ))}
+                    { rev.rating > 0 ? (
+                      <>
+                        {[...Array(5)].map((_, i) => (
+                          <Star key={i} className={`w-4 h-4 ${i < rev.rating ? 'fill-amber-400 text-amber-400' : 'text-gray-200'}`} />
+                        ))}
+                      </>
+                    ) : (
+                      <div className="mt-4"></div>
+                    )}
                   </div>
                   <p className="text-gray-600 italic mb-6 grow">"{rev.text}"</p>
                   <div className="flex items-center gap-3 border-t border-gray-50 pt-4">

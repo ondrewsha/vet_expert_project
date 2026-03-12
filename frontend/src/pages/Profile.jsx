@@ -82,6 +82,7 @@ export default function Profile() {
         setReviewText('');
     } catch (e) {
         toast.error("Не удалось отправить отзыв");
+        console.error("Ошибка при отправке отзыва", e);
     }
   };
 
@@ -499,25 +500,26 @@ export default function Profile() {
                 
                 {appt.status === 'completed' && !isDoctor && (
                   <div>
-                    <button 
-                        onClick={() => {
-                            setReviewDoctorId(appt.doctor.id);
-                            setIsReviewModalOpen(true);
-                        }}
-                        className="mt-2 text-xs text-primary font-bold hover:underline"
-                    >
-                        Написать отзыв
-                    </button>
-                    <div className="text-sm font-medium text-gray-500 mb-2 text-center sm:text-right">
+                    <div className="text-sm font-medium text-gray-500 mb-2 text-center">
                       {appt.rating ? "Ваша оценка" : "Оцените прием"}
                     </div>
-                    <div className="flex gap-1 justify-center sm:justify-end">
+                    <div className="flex gap-1 justify-center sm:justify-end mb-4">
                       {[1, 2, 3, 4, 5].map(star => (
                         <button key={star} onClick={() => handleRate(appt.id, star)} className={`transition ${(appt.rating || 0) >= star ? 'text-amber-400' : 'text-gray-300 hover:text-amber-200'}`}>
                           <Star className="w-7 h-7 fill-current" />
                         </button>
                       ))}
                     </div>
+                    <button 
+                        onClick={() => {
+                            setReviewDoctorId(appt.doctor.id);
+                            setReviewRating(appt.rating || 0);
+                            setIsReviewModalOpen(true);
+                        }}
+                        className="px-6 py-2 ml-1.5 bg-emerald-50 text-primary border border-primary/20 rounded-full text-xs font-bold hover:bg-primary hover:text-white transition-all duration-300 shadow-sm active:scale-95"
+                    >
+                        Написать отзыв
+                    </button>
                   </div>
                   )}
               </div>
@@ -636,15 +638,6 @@ export default function Profile() {
       {/* МОДАЛКА ОТЗЫВА */}
       <Modal isOpen={isReviewModalOpen} onClose={() => setIsReviewModalOpen(false)} title="Ваш отзыв">
         <div className="space-y-4">
-            <div className="flex justify-center gap-2">
-                {[1,2,3,4,5].map(s => (
-                    <Star 
-                        key={s} 
-                        onClick={() => setReviewRating(s)}
-                        className={`w-8 h-8 cursor-pointer ${reviewRating >= s ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`} 
-                    />
-                ))}
-            </div>
             <textarea 
                 value={reviewText}
                 onChange={e => setReviewText(e.target.value)}
