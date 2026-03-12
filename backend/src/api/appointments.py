@@ -301,7 +301,7 @@ async def book_appointment(
     pet_info: str = Form(""),
     pet_name: str = Form(""),
     pet_details: str = Form(""),
-    doctor_id: int = Form(...),
+    doctor_id: Optional[int] = Form(None),
     files: List[UploadFile] = File(None),
     current_user: User = Depends(get_current_user), 
     db: AsyncSession = Depends(get_db)
@@ -317,6 +317,45 @@ async def book_appointment(
         start_dt = start_dt.replace(tzinfo=moscow_tz)
     
     slot_time = start_dt.replace(tzinfo=None) # Для Redis
+
+    # --- ЛОГИКА АВТОПОДБОРА ВРАЧА ---
+    if doctor_id is None:
+        # Ищем всех активных врачей, работающих в этот день недели
+        day_index = str(start_dt.weekday())
+        res = await db.execute(
+            select(User).options(selectinload(User.doctor_profile))
+            .where(User.role.in_(["doctor", "superadmin"]))
+        )
+        all_doctors = res.scalars().all()
+        
+        chosen_doctor = None
+        for doc in all_doctors:
+            prof = doc.doctor_profile
+            if not prof or not prof.is_active: continue
+            if day_index not in (prof.work_days or "").split(','): continue
+            
+            # БД
+            busy_res = await db.execute(
+                select(Appointment).where(
+                    Appointment.doctor_id == doc.id,
+                    Appointment.start_time == start_dt,
+                    Appointment.status.in_(["scheduled", "completed", "blocked"])
+                )
+            )
+            if busy_res.scalars().first(): continue
+
+            # Redis (блокировка оплаты)
+            if await redis_client.get(f"slot_lock:{doc.id}:{slot_time.isoformat()}"):
+                continue
+            
+            chosen_doctor = doc
+            break
+        
+        if not chosen_doctor:
+            raise HTTPException(status_code=409, detail="К сожалению, на это время не осталось свободных врачей.")
+        
+        doctor_id = chosen_doctor.id
+    # ---------------------------------
     
     # 2. Проверяем блокировку Redis
     redis_key = f"slot_lock:{doctor_id}:{slot_time.isoformat()}"
