@@ -125,7 +125,7 @@ export default function GuideDetails() {
           <div className="md:w-2/3 p-8 flex flex-col">
             <div className="flex justify-between items-start mb-4">
               <h1 className="text-3xl font-extrabold text-gray-900">{guide.title}</h1>
-              <div className="bg-gray-100 px-3 py-1 rounded-full text-sm font-bold text-gray-600">
+              <div className="bg-gray-100 px-3 py-1 rounded-full text-sm font-bold text-gray-600 whitespace-nowrap">
                 {guide.price} ₽
               </div>
             </div>
