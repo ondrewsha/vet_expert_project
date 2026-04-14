@@ -19,8 +19,10 @@ async def send_telegram_message(chat_id: str, text: str, keyboard: dict = None):
     # Если передали клавиатуру — добавляем её в запрос
     if keyboard:
         payload["reply_markup"] = keyboard
+
+    proxy_url = "http://62.84.101.78:3128"
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(proxy=proxy_url) as client:
         try:
             response = await client.post(url, json=payload)
             if response.status_code != 200:
