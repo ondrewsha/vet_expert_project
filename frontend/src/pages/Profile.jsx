@@ -330,7 +330,7 @@ export default function Profile() {
               <div className="mt-4 p-5 bg-blue-50 border border-blue-100 rounded-xl animate-in fade-in slide-in-from-top-4">
                 {needBot ? (
                   <div className="text-sm text-blue-800 mb-4">
-                    Для подтверждения нового номера перейдите в <a href="https://t.me/VetExpert_TestBot" target="_blank" rel="noreferrer" className="font-bold underline">нашего Telegram-бота</a>, нажмите <b>Start</b> и отправьте свой контакт. После этого нажмите "Отправить код".
+                    Для подтверждения нового номера перейдите в <a href="https://t.me/zoo_medica_bot" target="_blank" rel="noreferrer" className="font-bold underline">нашего Telegram-бота</a>, нажмите <b>Start</b> и отправьте свой контакт. После этого нажмите "Отправить код".
                   </div>
                 ) : (
                   <div className="text-sm text-blue-800 mb-4">
