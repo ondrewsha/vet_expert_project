@@ -22,7 +22,8 @@ async def send_telegram_message(chat_id: str, text: str, keyboard: dict = None):
 
     proxy_url = "http://62.84.101.78:3128"
     
-    async with httpx.AsyncClient(proxy=proxy_url) as client:
+    async with httpx.AsyncClient(proxy=proxy_url, timeout=5.0) as client:
+        print(f"соединения с ТГ...")
         try:
             response = await client.post(url, json=payload)
             if response.status_code != 200:
